@@ -263,73 +263,125 @@ class OfstedChain:
     
     def _find_ofsted_report_url(self, school_name: str, urn: str = None) -> Optional[str]:
         """
-        Find the Ofsted PDF report URL.
+        Find the Ofsted PDF report URL using Serper API.
         
-        Uses web search to find reports on files.ofsted.gov.uk
+        This is how the original ofsted_analyzer_v2.py did it - 
+        using Serper to search Google for the PDF.
         """
-        # Try direct Ofsted URL if we have URN
-        if urn:
-            direct_url = f"https://files.ofsted.gov.uk/v1/file/{urn}"
-            # Could try to verify this exists, but usually URN-based URLs don't work directly
+        api_keys = get_api_keys()
+        serper_key = api_keys.get("serper")
         
-        # Search queries to try
+        if not serper_key:
+            logger.warning("No Serper API key - trying direct URL construction")
+            return self._try_direct_ofsted_url(school_name, urn)
+        
+        # Search queries to try (same as original)
         search_queries = [
-            f'"{school_name}" site:files.ofsted.gov.uk',
-            f'{school_name} Ofsted inspection report PDF',
-            f'"{school_name}" Ofsted report site:reports.ofsted.gov.uk'
+            f'"{school_name}" site:files.ofsted.gov.uk filetype:pdf',
+            f'{school_name} Ofsted report PDF',
+            f'"{school_name}" Ofsted inspection report'
         ]
         
         for query in search_queries:
             try:
-                # Use a simple web search approach
-                # In production, you'd use Serper or similar
-                results = self._web_search(query)
+                # Call Serper API
+                url = "https://google.serper.dev/search"
+                headers = {
+                    "X-API-KEY": serper_key,
+                    "Content-Type": "application/json"
+                }
+                payload = {
+                    "q": query,
+                    "num": 5
+                }
                 
-                for url in results:
-                    if self._is_ofsted_pdf_url(url):
-                        return url
+                response = requests.post(url, headers=headers, json=payload, timeout=10)
+                
+                if response.status_code == 200:
+                    data = response.json()
+                    organic_results = data.get("organic", [])
+                    
+                    for result in organic_results:
+                        link = result.get("link", "")
                         
+                        # Check if it's an Ofsted PDF
+                        if self._is_ofsted_pdf_url(link):
+                            logger.info(f"✅ Found Ofsted PDF via Serper: {link}")
+                            return link
+                        
+                        # Check if it's an Ofsted page that might have PDF link
+                        if "reports.ofsted.gov.uk" in link or "ofsted.gov.uk" in link:
+                            pdf_url = self._extract_pdf_from_page(link)
+                            if pdf_url:
+                                logger.info(f"✅ Found Ofsted PDF from page: {pdf_url}")
+                                return pdf_url
+                else:
+                    logger.warning(f"Serper API error: {response.status_code}")
+                    
             except Exception as e:
                 logger.warning(f"Search error for '{query}': {e}")
                 continue
         
-        return None
+        # Fallback: try direct URL construction
+        return self._try_direct_ofsted_url(school_name, urn)
     
-    def _web_search(self, query: str) -> List[str]:
+    def _try_direct_ofsted_url(self, school_name: str, urn: str = None) -> Optional[str]:
         """
-        Simple web search for Ofsted reports.
-        
-        In production, this would use Serper API or similar.
-        For now, we construct likely URLs.
+        Try to find Ofsted report without Serper by scraping reports.ofsted.gov.uk
         """
-        # This is a simplified version - in production use Serper
-        # For POC, we'll try to construct the URL directly
-        
-        # Try to get from reports.ofsted.gov.uk search
         try:
-            search_url = f"https://reports.ofsted.gov.uk/search?q={requests.utils.quote(query)}"
-            headers = {'User-Agent': 'Mozilla/5.0'}
-            response = requests.get(search_url, headers=headers, timeout=10)
+            # Search on Ofsted's own search page
+            search_url = f"https://reports.ofsted.gov.uk/search?q={requests.utils.quote(school_name)}"
+            headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
+            
+            response = requests.get(search_url, headers=headers, timeout=15)
             
             if response.status_code == 200:
                 soup = BeautifulSoup(response.text, 'html.parser')
-                urls = []
+                
+                # Look for links to provider pages or PDFs
+                for link in soup.find_all('a', href=True):
+                    href = link['href']
+                    
+                    # Direct PDF link
+                    if 'files.ofsted.gov.uk' in href and '.pdf' in href:
+                        return href
+                    
+                    # Provider page link - follow it to find PDF
+                    if '/provider/' in href:
+                        full_url = f"https://reports.ofsted.gov.uk{href}" if href.startswith('/') else href
+                        pdf_url = self._extract_pdf_from_page(full_url)
+                        if pdf_url:
+                            return pdf_url
+            
+        except Exception as e:
+            logger.warning(f"Direct search error: {e}")
+        
+        return None
+    
+    def _extract_pdf_from_page(self, page_url: str) -> Optional[str]:
+        """Extract PDF link from an Ofsted provider page"""
+        try:
+            headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
+            response = requests.get(page_url, headers=headers, timeout=10)
+            
+            if response.status_code == 200:
+                soup = BeautifulSoup(response.text, 'html.parser')
                 
                 for link in soup.find_all('a', href=True):
                     href = link['href']
-                    if 'files.ofsted.gov.uk' in href and href.endswith('.pdf'):
-                        urls.append(href)
-                    elif '/provider/' in href or '/inspection-reports/' in href:
-                        # Follow to find PDF
-                        full_url = f"https://reports.ofsted.gov.uk{href}" if href.startswith('/') else href
-                        urls.append(full_url)
-                
-                return urls[:5]
-                
+                    if 'files.ofsted.gov.uk' in href and '.pdf' in href.lower():
+                        return href
+                    if href.endswith('.pdf') and 'ofsted' in href.lower():
+                        if not href.startswith('http'):
+                            from urllib.parse import urljoin
+                            href = urljoin(page_url, href)
+                        return href
+                        
         except Exception as e:
-            logger.warning(f"Web search error: {e}")
+            logger.warning(f"Error extracting PDF from {page_url}: {e}")
         
-        return []
+        return None
     
     def _is_ofsted_pdf_url(self, url: str) -> bool:
         """Check if URL is likely an Ofsted PDF"""
