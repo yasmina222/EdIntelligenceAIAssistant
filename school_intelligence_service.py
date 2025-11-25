@@ -23,14 +23,29 @@ HOW TO USE:
 import logging
 import json
 import hashlib
+import sys
+import os
 from pathlib import Path
 from datetime import datetime, timedelta
 from typing import Optional, List, Dict, Any
+
+# Add the project root to Python path (fixes Streamlit Cloud imports)
+PROJECT_ROOT = Path(__file__).parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
 from models_v2 import School, ConversationStarter, ConversationStarterResponse
 from data_loader import DataLoader, get_data_loader
 from chains.conversation_chain import ConversationChain
 from config_v2 import ENABLE_CACHE, CACHE_TTL_HOURS, CACHE_DIR, FEATURES
+
+# Import Ofsted chain (optional - may fail if dependencies missing)
+try:
+    from chains.ofsted_chain import OfstedChain, get_ofsted_chain
+    OFSTED_AVAILABLE = True
+except ImportError as e:
+    OFSTED_AVAILABLE = False
+    logger.warning(f"Ofsted chain not available: {e}")
 
 logger = logging.getLogger(__name__)
 
@@ -142,6 +157,7 @@ class SchoolIntelligenceService:
         """Initialize all components"""
         self.data_loader = get_data_loader()
         self.conversation_chain = None  # Lazy load to avoid API calls at startup
+        self.ofsted_chain = None  # Lazy load Ofsted analyzer
         self.cache = SimpleCache()
         
         logger.info("✅ SchoolIntelligenceService initialized")
@@ -151,6 +167,14 @@ class SchoolIntelligenceService:
         if self.conversation_chain is None:
             self.conversation_chain = ConversationChain()
         return self.conversation_chain
+    
+    def _get_ofsted_chain(self) -> Optional['OfstedChain']:
+        """Lazy-load the Ofsted chain"""
+        if not OFSTED_AVAILABLE:
+            return None
+        if self.ofsted_chain is None:
+            self.ofsted_chain = get_ofsted_chain()
+        return self.ofsted_chain
     
     # =========================================================================
     # DATA ACCESS METHODS
@@ -275,6 +299,116 @@ class SchoolIntelligenceService:
             logger.error(f"❌ Async error: {e}")
             return school
     
+    def get_school_intelligence_with_ofsted(
+        self,
+        school_name: str,
+        force_refresh: bool = False,
+        num_starters: int = 5,
+        include_ofsted: bool = True
+    ) -> Optional[School]:
+        """
+        Get school intelligence WITH Ofsted analysis.
+        
+        This method:
+        1. Gets school data from CSV
+        2. Analyzes Ofsted report (downloads PDF, extracts improvements)
+        3. Generates conversation starters using BOTH financial + Ofsted data
+        
+        Args:
+            school_name: Name of the school
+            force_refresh: If True, bypass cache
+            num_starters: Number of conversation starters
+            include_ofsted: If True, fetch and analyze Ofsted report
+            
+        Returns:
+            School object with conversation_starters including Ofsted insights
+        """
+        # Get the school
+        school = self.data_loader.get_school_by_name(school_name)
+        if not school:
+            logger.warning(f"⚠️ School not found: {school_name}")
+            return None
+        
+        # Check cache first
+        if not force_refresh:
+            cached_starters = self.cache.get(school.urn)
+            if cached_starters:
+                school.conversation_starters = [
+                    ConversationStarter(**s) for s in cached_starters
+                ]
+                logger.info(f"📦 Using cached starters for {school_name}")
+                return school
+        
+        all_starters = []
+        ofsted_data = None
+        
+        # Step 1: Ofsted analysis (if enabled and available)
+        if include_ofsted and OFSTED_AVAILABLE and FEATURES.get("ofsted_analysis", True):
+            try:
+                logger.info(f"🔍 Fetching Ofsted data for {school_name}...")
+                ofsted_chain = self._get_ofsted_chain()
+                
+                if ofsted_chain:
+                    ofsted_result = ofsted_chain.analyze(school_name, school.urn)
+                    
+                    if ofsted_result and not ofsted_result.get("error"):
+                        # Update school with Ofsted data
+                        from models_v2 import OfstedData
+                        school.ofsted = OfstedData(
+                            rating=ofsted_result.get("rating"),
+                            inspection_date=ofsted_result.get("inspection_date"),
+                            report_url=ofsted_result.get("report_url"),
+                            areas_for_improvement=[
+                                imp.get("description", "") 
+                                for imp in ofsted_result.get("improvements", [])[:5]
+                            ]
+                        )
+                        
+                        # Add Ofsted conversation starters (WITH SOURCE URLs!)
+                        ofsted_starters = ofsted_result.get("conversation_starters", [])
+                        all_starters.extend(ofsted_starters)
+                        
+                        logger.info(f"✅ Got {len(ofsted_starters)} Ofsted-based starters")
+                    else:
+                        logger.warning(f"⚠️ Ofsted analysis returned error: {ofsted_result.get('error')}")
+                        
+            except Exception as e:
+                logger.error(f"❌ Ofsted analysis failed: {e}")
+                # Continue without Ofsted data
+        
+        # Step 2: Generate financial-based conversation starters
+        if FEATURES.get("conversation_starters", True):
+            try:
+                chain = self._get_chain()
+                
+                # Reduce number if we already have Ofsted starters
+                remaining = max(1, num_starters - len(all_starters))
+                
+                response = chain.generate(school, remaining)
+                all_starters.extend(response.conversation_starters)
+                
+            except Exception as e:
+                logger.error(f"❌ Error generating starters: {e}")
+        
+        # Combine and deduplicate starters
+        # Prioritize Ofsted starters (they have source URLs!)
+        seen_topics = set()
+        unique_starters = []
+        
+        for starter in all_starters:
+            if starter.topic not in seen_topics:
+                seen_topics.add(starter.topic)
+                unique_starters.append(starter)
+        
+        # Limit to requested number
+        school.conversation_starters = unique_starters[:num_starters]
+        
+        # Cache the results
+        self.cache.set(school.urn, school.conversation_starters)
+        
+        logger.info(f"✅ Generated {len(school.conversation_starters)} total starters for {school_name}")
+        return school
+
     def get_high_priority_schools(self, limit: int = 10) -> List[School]:
         """
         Get top priority schools for calling.
@@ -374,3 +508,4 @@ if __name__ == "__main__":
     #     for s in school.conversation_starters:
     #         print(f"\n   Topic: {s.topic}")
     #         print(f"   {s.detail}")
+
