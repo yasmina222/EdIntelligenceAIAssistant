@@ -22,7 +22,7 @@ import logging
 # Import our modules
 from school_intelligence_service import get_intelligence_service
 from models_v2 import School, ConversationStarter
-from config_v2 import get_app_password, LLM_PROVIDER, FEATURES
+from config_v2 import APP_PASSWORD, LLM_PROVIDER, FEATURES
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -58,7 +58,7 @@ def check_password() -> bool:
     password = st.text_input("Enter Password", type="password", key="password_input")
     
     if st.button("Login", type="primary"):
-        if password == get_app_password():
+        if password == APP_PASSWORD:
             st.session_state.authenticated = True
             st.rerun()
         else:
