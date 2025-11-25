@@ -11,14 +11,20 @@ WHAT THIS FILE DOES:
 HOW TO SWITCH LLMs:
 - Set LLM_PROVIDER = "anthropic" for Claude
 - Set LLM_PROVIDER = "openai" for GPT
+
+IMPORTANT: API keys are loaded LAZILY (only when needed)
+to avoid Streamlit Cloud import issues.
 """
 
 import os
 from typing import Literal
-from dotenv import load_dotenv
 
-# Load environment variables
-load_dotenv()
+# Try to load dotenv, but don't fail if not available
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
 
 # =============================================================================
 # LLM CONFIGURATION - CHANGE THIS TO SWITCH BETWEEN CLAUDE AND OPENAI
@@ -45,28 +51,55 @@ def get_model(model_type: str = "primary") -> str:
 
 
 # =============================================================================
-# API KEYS - These are loaded from environment or Streamlit secrets
+# API KEYS - LAZY LOADING (only fetched when needed, not at import time)
 # =============================================================================
 
 def get_api_keys() -> dict:
     """
     Get API keys from Streamlit secrets (cloud) or environment (local)
+    
+    IMPORTANT: This function is called LAZILY, not at import time.
+    This prevents crashes on Streamlit Cloud during the import phase.
     """
+    keys = {
+        "openai": None,
+        "anthropic": None,
+        "serper": None,
+        "firecrawl": None,
+    }
+    
+    # First, try environment variables
+    keys["openai"] = os.getenv("OPENAI_API_KEY")
+    keys["anthropic"] = os.getenv("ANTHROPIC_API_KEY")
+    keys["serper"] = os.getenv("SERPER_API_KEY")
+    keys["firecrawl"] = os.getenv("FIRECRAWL_API_KEY")
+    
+    # Then, try Streamlit secrets (only if running in Streamlit)
     try:
         import streamlit as st
-        return {
-            "openai": st.secrets.get("OPENAI_API_KEY", os.getenv("OPENAI_API_KEY")),
-            "anthropic": st.secrets.get("ANTHROPIC_API_KEY", os.getenv("ANTHROPIC_API_KEY")),
-            "serper": st.secrets.get("SERPER_API_KEY", os.getenv("SERPER_API_KEY")),
-            "firecrawl": st.secrets.get("FIRECRAWL_API_KEY", os.getenv("FIRECRAWL_API_KEY")),
-        }
-    except:
-        return {
-            "openai": os.getenv("OPENAI_API_KEY"),
-            "anthropic": os.getenv("ANTHROPIC_API_KEY"),
-            "serper": os.getenv("SERPER_API_KEY"),
-            "firecrawl": os.getenv("FIRECRAWL_API_KEY"),
-        }
+        if hasattr(st, 'secrets'):
+            # Use dictionary-style access with fallback
+            try:
+                keys["openai"] = st.secrets["OPENAI_API_KEY"]
+            except (KeyError, FileNotFoundError):
+                pass
+            try:
+                keys["anthropic"] = st.secrets["ANTHROPIC_API_KEY"]
+            except (KeyError, FileNotFoundError):
+                pass
+            try:
+                keys["serper"] = st.secrets["SERPER_API_KEY"]
+            except (KeyError, FileNotFoundError):
+                pass
+            try:
+                keys["firecrawl"] = st.secrets["FIRECRAWL_API_KEY"]
+            except (KeyError, FileNotFoundError):
+                pass
+    except Exception:
+        # If anything goes wrong with Streamlit, just use env vars
+        pass
+    
+    return keys
 
 
 # =============================================================================
@@ -108,8 +141,25 @@ CACHE_DIR = "cache"
 # APP SETTINGS
 # =============================================================================
 
-# App password (for basic security)
-APP_PASSWORD = os.getenv("APP_PASSWORD", "SEG2025AI!")
+def get_app_password() -> str:
+    """Get app password from secrets or environment"""
+    # Try Streamlit secrets first
+    try:
+        import streamlit as st
+        if hasattr(st, 'secrets'):
+            try:
+                return st.secrets["APP_PASSWORD"]
+            except (KeyError, FileNotFoundError):
+                pass
+    except Exception:
+        pass
+    
+    # Fall back to environment variable or default
+    return os.getenv("APP_PASSWORD", "SEG2025AI!")
+
+
+# For backward compatibility
+APP_PASSWORD = "SEG2025AI!"  # Default value, get_app_password() should be used
 
 # Output directory for exports
 OUTPUT_DIR = "outputs"
