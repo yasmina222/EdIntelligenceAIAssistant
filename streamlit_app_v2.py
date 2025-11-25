@@ -74,19 +74,34 @@ def check_password() -> bool:
 
 st.markdown("""
 <style>
-    /* Clean, professional styling */
-    .stApp {
-        background-color: #FFFFFF;
+    /* Make all main text visible on dark background */
+    .stApp h1, .stApp h2, .stApp h3, .stApp h4, .stApp h5, .stApp h6 {
+        color: #E8E8E8 !important;
     }
     
-    /* Headers */
-    h1, h2, h3 {
-        color: #1a1a2e;
+    /* Regular text and paragraphs */
+    .stApp p, .stApp span, .stApp label, .stApp div {
+        color: #D0D0D0 !important;
+    }
+    
+    /* Markdown text */
+    .stMarkdown, .stMarkdown p, .stMarkdown span {
+        color: #D0D0D0 !important;
+    }
+    
+    /* Metric labels and values */
+    [data-testid="stMetricLabel"], [data-testid="stMetricValue"] {
+        color: #E8E8E8 !important;
+    }
+    
+    /* Tab labels */
+    .stTabs [data-baseweb="tab"] {
+        color: #D0D0D0 !important;
     }
     
     /* Cards for conversation starters */
     .starter-card {
-        background-color: #f8f9fa;
+        background-color: #2D2D3A;
         border-left: 4px solid #0066ff;
         padding: 1rem;
         margin: 0.5rem 0;
@@ -95,19 +110,19 @@ st.markdown("""
     
     .starter-topic {
         font-weight: 600;
-        color: #0066ff;
+        color: #5CA8FF !important;
         margin-bottom: 0.5rem;
     }
     
     .starter-detail {
-        color: #333;
+        color: #E0E0E0 !important;
         line-height: 1.6;
     }
     
     /* Priority badges */
     .priority-high {
         background-color: #dc3545;
-        color: white;
+        color: white !important;
         padding: 0.25rem 0.75rem;
         border-radius: 20px;
         font-weight: 600;
@@ -116,7 +131,7 @@ st.markdown("""
     
     .priority-medium {
         background-color: #ffc107;
-        color: black;
+        color: black !important;
         padding: 0.25rem 0.75rem;
         border-radius: 20px;
         font-weight: 600;
@@ -125,16 +140,16 @@ st.markdown("""
     
     .priority-low {
         background-color: #28a745;
-        color: white;
+        color: white !important;
         padding: 0.25rem 0.75rem;
         border-radius: 20px;
         font-weight: 600;
         font-size: 0.85rem;
     }
     
-    /* Financial data */
+    /* Financial data card */
     .financial-highlight {
-        background-color: #fff3cd;
+        background-color: #3D3D2A;
         padding: 1rem;
         border-radius: 8px;
         margin: 0.5rem 0;
@@ -142,14 +157,13 @@ st.markdown("""
     
     /* Contact card */
     .contact-card {
-        background-color: #e7f3ff;
+        background-color: #2A3D4D;
         padding: 1rem;
         border-radius: 8px;
         margin: 0.5rem 0;
     }
 </style>
 """, unsafe_allow_html=True)
-
 
 # =============================================================================
 # MAIN APP
