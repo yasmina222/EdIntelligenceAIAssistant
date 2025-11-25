@@ -508,4 +508,3 @@ if __name__ == "__main__":
     #     for s in school.conversation_starters:
     #         print(f"\n   Topic: {s.topic}")
     #         print(f"   {s.detail}")
-
