@@ -18,11 +18,19 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime
 import logging
+import sys
+import os
+from pathlib import Path
+
+# Add the project root to Python path (fixes Streamlit Cloud imports)
+PROJECT_ROOT = Path(__file__).parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
 # Import our modules
 from school_intelligence_service import get_intelligence_service
 from models_v2 import School, ConversationStarter
-from config_v2 import APP_PASSWORD, LLM_PROVIDER, FEATURES
+from config_v2 import get_app_password, LLM_PROVIDER, FEATURES
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -58,7 +66,7 @@ def check_password() -> bool:
     password = st.text_input("Enter Password", type="password", key="password_input")
     
     if st.button("Login", type="primary"):
-        if password == APP_PASSWORD:
+        if password == get_app_password():
             st.session_state.authenticated = True
             st.rerun()
         else:
@@ -164,6 +172,7 @@ st.markdown("""
     }
 </style>
 """, unsafe_allow_html=True)
+
 
 # =============================================================================
 # MAIN APP
@@ -333,14 +342,27 @@ def display_conversation_starters(school: School, service):
                 </div>
                 """, unsafe_allow_html=True)
                 
+                # Source attribution - YOU LOVE THIS!
                 if starter.source:
-                    st.caption(f"📊 Source: {starter.source}")
+                    if starter.source.startswith("http"):
+                        # It's a URL (likely Ofsted report)
+                        st.markdown(f"📄 **Source:** [View Ofsted Report]({starter.source})")
+                    else:
+                        st.caption(f"📊 Source: {starter.source}")
                 
                 # Copy button
                 st.code(starter.detail, language=None)
     
-    # Generate button
-    col1, col2 = st.columns([1, 3])
+    # Ofsted info display (if available)
+    if school.ofsted and school.ofsted.rating:
+        st.info(f"📋 **Ofsted Rating:** {school.ofsted.rating} | **Inspected:** {school.ofsted.inspection_date or 'Unknown'}")
+        if school.ofsted.report_url:
+            st.markdown(f"[📄 View Full Ofsted Report]({school.ofsted.report_url})")
+    
+    st.divider()
+    
+    # Generate button with Ofsted toggle
+    col1, col2, col3 = st.columns([1, 1, 2])
     
     with col1:
         num_starters = st.number_input(
@@ -351,20 +373,37 @@ def display_conversation_starters(school: School, service):
         )
     
     with col2:
+        include_ofsted = st.checkbox(
+            "Include Ofsted",
+            value=True,
+            help="Fetch and analyze Ofsted report (adds 10-15 seconds)"
+        )
+    
+    with col3:
         if st.button("🤖 Generate Conversation Starters", type="primary"):
-            with st.spinner("Generating insights with AI..."):
-                # This makes the LLM call
-                school_with_starters = service.get_school_intelligence(
-                    school.school_name,
-                    force_refresh=True,
-                    num_starters=num_starters
-                )
+            if include_ofsted:
+                with st.spinner("🔍 Analyzing Ofsted report + generating insights..."):
+                    # Use the new method that includes Ofsted
+                    school_with_starters = service.get_school_intelligence_with_ofsted(
+                        school.school_name,
+                        force_refresh=True,
+                        num_starters=num_starters,
+                        include_ofsted=True
+                    )
+            else:
+                with st.spinner("Generating insights with AI..."):
+                    # Use the basic method (faster, no Ofsted)
+                    school_with_starters = service.get_school_intelligence(
+                        school.school_name,
+                        force_refresh=True,
+                        num_starters=num_starters
+                    )
                 
-                if school_with_starters and school_with_starters.conversation_starters:
-                    st.success(f"✅ Generated {len(school_with_starters.conversation_starters)} starters!")
-                    st.rerun()
-                else:
-                    st.error("Failed to generate starters. Check your API key.")
+            if school_with_starters and school_with_starters.conversation_starters:
+                st.success(f"✅ Generated {len(school_with_starters.conversation_starters)} starters!")
+                st.rerun()
+            else:
+                st.error("Failed to generate starters. Check your API key.")
 
 
 def display_contact_info(school: School):
