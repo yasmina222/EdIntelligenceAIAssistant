@@ -190,7 +190,6 @@ def main():
     
     # Header
     st.title("🎓 School Research Assistant")
-    st.markdown(f"*Using {LLM_PROVIDER.upper()} for analysis*")
     
     # Load schools on startup (this is instant - from CSV)
     with st.spinner("Loading schools..."):
@@ -217,16 +216,6 @@ def main():
             st.session_state.filter = "agency"
         if st.button("Show All"):
             st.session_state.filter = "all"
-        
-        st.divider()
-        
-        st.subheader("⚙️ Settings")
-        st.caption(f"LLM: {LLM_PROVIDER}")
-        st.caption(f"Data source: {stats['data_source']}")
-        
-        if st.button("Clear Cache"):
-            cleared = service.clear_cache()
-            st.success(f"Cleared {cleared} cached entries")
     
     # Main content
     st.header("🔍 Search Schools")
@@ -258,10 +247,13 @@ def main():
         high_priority = service.get_high_priority_schools(limit=5)
         
         for school in high_priority:
-            col1, col2, col3, col4 = st.columns([3, 1, 1, 1])
+            col1, col2, col3 = st.columns([4, 1, 1])
             
             with col1:
-                st.write(f"**{school.school_name}**")
+                # Make the school name clickable
+                if st.button(f"📍 **{school.school_name}**", key=f"select_{school.urn}"):
+                    st.session_state.selected_school = school.school_name
+                    st.rerun()
             with col2:
                 priority = school.get_sales_priority()
                 if priority == "HIGH":
@@ -273,10 +265,6 @@ def main():
             with col3:
                 if school.financial and school.financial.agency_supply_costs:
                     st.write(school.financial.agency_supply_costs)
-            with col4:
-                if st.button("View", key=f"view_{school.urn}"):
-                    st.session_state.selected_school = school.school_name
-                    st.rerun()
 
 
 def display_school(school: School, service):
@@ -500,10 +488,6 @@ def display_full_details(school: School):
     ])
     
     st.dataframe(df, hide_index=True, use_container_width=True)
-    
-    # LLM Context (what gets sent to the AI)
-    with st.expander("🤖 View LLM Context (what the AI sees)"):
-        st.code(school.to_llm_context())
 
 
 # =============================================================================
