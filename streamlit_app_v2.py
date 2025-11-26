@@ -10,9 +10,6 @@ WHAT'S NEW:
 - Click "Generate Insights" → LLM creates conversation starters
 - Much simpler, cleaner code
 
-HOW TO RUN:
-    streamlit run streamlit_app_v2.py
-"""
 
 import streamlit as st
 import pandas as pd
