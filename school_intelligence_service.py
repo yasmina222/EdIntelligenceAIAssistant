@@ -9,17 +9,6 @@ WHAT THIS FILE DOES:
 - Calls the LangChain conversation chain
 - Handles caching to avoid redundant LLM calls
 
-HOW TO USE:
-    service = SchoolIntelligenceService()
-    
-    # Get a school with conversation starters
-    school = service.get_school_intelligence("Thomas Coram Centre")
-    
-    # Access the starters
-    for starter in school.conversation_starters:
-        print(starter.detail)
-"""
-
 import logging
 import json
 import hashlib
@@ -92,7 +81,7 @@ class SimpleCache:
             # Check if expired
             cached_at = datetime.fromisoformat(data['cached_at'])
             if datetime.now() - cached_at > timedelta(hours=CACHE_TTL_HOURS):
-                logger.info(f"🕐 Cache expired for {school_urn}")
+                logger.info(f" Cache expired for {school_urn}")
                 return None
             
             logger.info(f"📦 Cache HIT for {school_urn}")
@@ -120,7 +109,7 @@ class SimpleCache:
             with open(cache_path, 'w') as f:
                 json.dump(data, f, indent=2)
             
-            logger.info(f"💾 Cached {len(starters)} starters for {school_urn}")
+            logger.info(f" Cached {len(starters)} starters for {school_urn}")
             return True
             
         except Exception as e:
@@ -142,7 +131,7 @@ class SimpleCache:
                 cache_file.unlink()
                 count += 1
         
-        logger.info(f"🧹 Cleared {count} cache entries")
+        logger.info(f" Cleared {count} cache entries")
         return count
 
 
@@ -196,9 +185,9 @@ class SchoolIntelligenceService:
         """Get data statistics"""
         return self.data_loader.get_statistics()
     
-    # 
+    
     # INTELLIGENCE METHODS (with LLM calls)
-    # 
+    
     
     def get_school_intelligence(
         self, 
@@ -430,7 +419,7 @@ class SchoolIntelligenceService:
         """Get schools that spend on agency staff"""
         return self.data_loader.get_schools_with_agency_spend()
     
-    # 
+    
     # CACHE MANAGEMENT
     # 
     
@@ -448,9 +437,9 @@ class SchoolIntelligenceService:
         return self.data_loader.refresh()
 
 
-# =
+
 # SINGLETON INSTANCE
-# 
+
 
 _service_instance: Optional[SchoolIntelligenceService] = None
 
@@ -486,18 +475,18 @@ if __name__ == "__main__":
     
     # Get statistics
     stats = service.get_statistics()
-    print(f"\n📊 Statistics:")
+    print(f"\n Statistics:")
     for k, v in stats.items():
         print(f"   {k}: {v}")
     
     # Get high priority schools
     high_priority = service.get_high_priority_schools(limit=3)
-    print(f"\n🎯 High priority schools:")
+    print(f"\n High priority schools:")
     for school in high_priority:
         print(f"   • {school.school_name} ({school.get_sales_priority()})")
     
     # Test intelligence generation (this makes an LLM call!)
-    print("\n🤖 Testing conversation starter generation...")
+    print("\n Testing conversation starter generation...")
     print("   (This will make an API call to Claude/GPT)")
     
     # Uncomment to test:
