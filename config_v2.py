@@ -3,17 +3,6 @@ School Research Assistant - Configuration (v2)
 ==============================================
 Replaces: config.py
 
-WHAT THIS FILE DOES:
-- Stores all settings in one place
-- Lets you choose between Claude and OpenAI
-- Handles API keys from environment or Streamlit secrets
-
-HOW TO SWITCH LLMs:
-- Set LLM_PROVIDER = "anthropic" for Claude
-- Set LLM_PROVIDER = "openai" for GPT
-
-IMPORTANT: API keys are loaded LAZILY (only when needed)
-to avoid Streamlit Cloud import issues.
 """
 
 import os
@@ -26,14 +15,11 @@ try:
 except ImportError:
     pass
 
-# =============================================================================
-# LLM CONFIGURATION - CHANGE THIS TO SWITCH BETWEEN CLAUDE AND OPENAI
-# =============================================================================
 
 # Options: "anthropic" (Claude) or "openai" (GPT)
 LLM_PROVIDER: Literal["anthropic", "openai"] = "anthropic"
 
-# Model names
+
 MODELS = {
     "anthropic": {
         "primary": "claude-sonnet-4-20250514",      # Main model for conversation starters
@@ -50,16 +36,12 @@ def get_model(model_type: str = "primary") -> str:
     return MODELS[LLM_PROVIDER][model_type]
 
 
-# =============================================================================
-# API KEYS - LAZY LOADING (only fetched when needed, not at import time)
-# =============================================================================
+
 
 def get_api_keys() -> dict:
     """
     Get API keys from Streamlit secrets (cloud) or environment (local)
     
-    IMPORTANT: This function is called LAZILY, not at import time.
-    This prevents crashes on Streamlit Cloud during the import phase.
     """
     keys = {
         "openai": None,
@@ -74,7 +56,7 @@ def get_api_keys() -> dict:
     keys["serper"] = os.getenv("SERPER_API_KEY")
     keys["firecrawl"] = os.getenv("FIRECRAWL_API_KEY")
     
-    # Then, try Streamlit secrets (only if running in Streamlit)
+    # Then, try Streamlit secrets
     try:
         import streamlit as st
         if hasattr(st, 'secrets'):
@@ -102,10 +84,6 @@ def get_api_keys() -> dict:
     return keys
 
 
-# =============================================================================
-# DATA SOURCE CONFIGURATION
-# =============================================================================
-
 # Options: "csv", "databricks"
 DATA_SOURCE: Literal["csv", "databricks"] = "csv"
 
@@ -123,9 +101,6 @@ DATABRICKS_CONFIG = {
 }
 
 
-# =============================================================================
-# CACHING CONFIGURATION
-# =============================================================================
 
 # Enable/disable caching
 ENABLE_CACHE = True
@@ -136,10 +111,6 @@ CACHE_TTL_HOURS = 24
 # Cache directory
 CACHE_DIR = "cache"
 
-
-# =============================================================================
-# APP SETTINGS
-# =============================================================================
 
 def get_app_password() -> str:
     """Get app password from secrets or environment"""
@@ -158,8 +129,7 @@ def get_app_password() -> str:
     return os.getenv("APP_PASSWORD", "SEG2025AI!")
 
 
-# For backward compatibility
-APP_PASSWORD = "SEG2025AI!"  # Default value, get_app_password() should be used
+APP_PASSWORD = "SEG2025AI!"  
 
 # Output directory for exports
 OUTPUT_DIR = "outputs"
@@ -168,24 +138,15 @@ OUTPUT_DIR = "outputs"
 LOG_LEVEL = "INFO"
 
 
-# =============================================================================
-# FEATURE FLAGS - Turn features on/off
-# =============================================================================
-
 FEATURES = {
-    "conversation_starters": True,      # Generate conversation starters with LLM
-    "financial_analysis": True,         # Include financial data in analysis
-    "ofsted_analysis": True,            # Include Ofsted data in analysis
-    "live_web_search": False,           # For POC, this is OFF (data is pre-loaded)
-    "export_to_excel": True,            # Allow Excel export
+    "conversation_starters": True,      
+    "financial_analysis": True,        
+    "ofsted_analysis": True,            
+    "live_web_search": False,           
+    "export_to_excel": True,            
 }
 
 
-# =============================================================================
-# PROMPT SETTINGS
-# =============================================================================
-
-# Maximum conversation starters to generate per school
 MAX_CONVERSATION_STARTERS = 5
 
 # Temperature for LLM (0 = deterministic, 1 = creative)
