@@ -22,10 +22,8 @@ from config_v2 import get_app_password, LLM_PROVIDER, FEATURES
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-
-# 
 # PAGE CONFIG
-# 
+
 
 st.set_page_config(
     page_title="School Research Assistant",
@@ -36,7 +34,6 @@ st.set_page_config(
 
 
 # PASSWORD PROTECTION
-# 
 
 def check_password() -> bool:
     """Simple password protection"""
