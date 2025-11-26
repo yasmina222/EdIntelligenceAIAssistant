@@ -1,18 +1,6 @@
 """
 School Research Assistant - Pydantic Models (v2)
-================================================
 Replaces: models.py (dataclasses)
-
-WHY PYDANTIC?
-- Automatic validation (if GPT returns bad data, we catch it immediately)
-- Easy JSON serialization (for caching and export)
-- Works seamlessly with LangChain structured outputs
-- Clear error messages when data is wrong
-
-WHAT THIS FILE DOES:
-- Defines the structure of all data in the app
-- Validates data automatically when created
-- Provides default values for missing fields
 """
 
 from pydantic import BaseModel, Field, field_validator
@@ -288,7 +276,7 @@ class ConversationStarterResponse(BaseModel):
     """
     Response from the LLM when generating conversation starters.
     
-    This is used by LangChain to parse the LLM output into structured data.
+     used by LangChain to parse the LLM output into structured data.
     """
     conversation_starters: List[ConversationStarter] = Field(
         description="List of conversation starters for sales consultants"
