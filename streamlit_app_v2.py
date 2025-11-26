@@ -1,14 +1,3 @@
-"""
-School Research Assistant - Streamlit App (v2)
-===============================================
-Replaces: streamlit_app.py
-
-WHAT'S NEW:
-- Schools load automatically on startup (no waiting)
-- Dropdown shows all 28 schools
-- Click a school → see data instantly
-- Click "Generate Insights" → LLM creates conversation starters
-- Much simpler, cleaner code
 
 
 import streamlit as st
@@ -45,7 +34,7 @@ st.set_page_config(
 )
 
 
-#
+
 # PASSWORD PROTECTION
 # 
 
@@ -73,9 +62,9 @@ def check_password() -> bool:
     return False
 
 
-# 
+
 # STYLING
-# 
+
 
 st.markdown("""
 <style>
@@ -171,9 +160,9 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 
-# 
+
 # MAIN APP
-# 
+
 
 def main():
     """Main application logic"""
@@ -487,9 +476,9 @@ def display_full_details(school: School):
     st.dataframe(df, hide_index=True, use_container_width=True)
 
 
-# 
+
 # RUN THE APP
-# 
+
 
 if __name__ == "__main__":
     main()
