@@ -2,24 +2,6 @@
 School Research Assistant - Ofsted Analysis Chain
 ==================================================
 Adapted from: ofsted_analyzer_v2.py
-
-WHAT THIS FILE DOES:
-- Finds Ofsted PDF reports via web search
-- Downloads and extracts text from PDFs (PyPDF2)
-- Uses regex patterns to find improvement areas
-- Sends to Claude/Anthropic for structured analysis
-- Returns conversation starters WITH SOURCE URLs
-
-PRESERVED FROM ORIGINAL:
-- All regex patterns for subjects, SEND, behaviour, leadership
-- PyPDF2 for PDF extraction (no API cost)
-- Source URL attribution on every conversation starter
-- Subject categorization (maths, english, science, etc.)
-
-WHAT'S NEW (LANGCHAIN):
-- Uses LangChain for LLM calls instead of direct OpenAI
-- Supports both Claude (Anthropic) and GPT (OpenAI)
-- Pydantic models for structured outputs
 """
 
 import re
@@ -50,9 +32,6 @@ from models_v2 import ConversationStarter, OfstedData
 logger = logging.getLogger(__name__)
 
 
-# =============================================================================
-# PYDANTIC MODELS FOR STRUCTURED OUTPUT
-# =============================================================================
 
 class SubjectImprovement(BaseModel):
     """Improvement needed in a specific subject"""
@@ -79,10 +58,6 @@ class OfstedAnalysisResult(BaseModel):
     report_url: Optional[str] = Field(default=None)
     pdf_extracted: bool = Field(default=False)
 
-
-# =============================================================================
-# OFSTED CHAIN CLASS
-# =============================================================================
 
 class OfstedChain:
     """
@@ -834,9 +809,6 @@ Return as JSON:
         return starters
 
 
-# =============================================================================
-# CONVENIENCE FUNCTION
-# =============================================================================
 
 def get_ofsted_chain() -> OfstedChain:
     """Get an instance of the Ofsted chain"""
