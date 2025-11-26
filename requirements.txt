@@ -1,8 +1,8 @@
-# =============================================================================
+
 # School Research Assistant - Dependencies (v2)
-# =============================================================================
+
 # Install with: pip install -r requirements_v2.txt
-# =============================================================================
+
 
 # Core LangChain packages
 langchain>=0.3.0
@@ -39,9 +39,9 @@ dnspython>=2.4.0
 # HTML parsing
 beautifulsoup4>=4.12.0
 
-# =============================================================================
+
 # OPTIONAL: For future phases
-# =============================================================================
+
 
 # Vector store (Phase 2 - for 24K schools search)
 # chromadb>=0.4.0
@@ -56,7 +56,6 @@ beautifulsoup4>=4.12.0
 # Firecrawl (if you still want live scraping)
 # firecrawl-py>=1.0.0
 
-# =============================================================================
 # NOTE: If using Claude, you need ANTHROPIC_API_KEY in your .env
 # If using OpenAI, you need OPENAI_API_KEY in your .env
-# =============================================================================
+
