@@ -1,8 +1,6 @@
 """
 School Research Assistant - Intelligence Service
 
-Replaces: processor_premium.py
-
 WHAT THIS FILE DOES:
 - Orchestrates the entire flow: load data → generate insights → cache
 - This is the "brain" that coordinates everything
@@ -165,9 +163,9 @@ class SchoolIntelligenceService:
             self.ofsted_chain = get_ofsted_chain()
         return self.ofsted_chain
     
-    # 
+    
     # DATA ACCESS METHODS
-    # 
+    
     
     def get_all_schools(self) -> List[School]:
         """Get all schools from the data source"""
@@ -421,7 +419,7 @@ class SchoolIntelligenceService:
     
     
     # CACHE MANAGEMENT
-    # 
+    
     
     def clear_cache(self, school_name: str = None) -> int:
         """Clear cache for one school or all schools"""
