@@ -3,29 +3,12 @@ School Research Assistant - Data Loader
 ========================================
 NEW FILE (doesn't replace anything - this is new functionality)
 
-WHAT THIS FILE DOES:
-- Loads your 28 Camden schools from the CSV file
+GOAL:
+- Loads schools from the CSV file
 - Converts each row into a School Pydantic model
 - Provides search/filter functions
 - FUTURE: Will connect to Databricks with minimal code changes
 
-HOW TO USE:
-    loader = DataLoader()
-    
-    # Get all schools
-    schools = loader.get_all_schools()
-    
-    # Get school names for dropdown
-    names = loader.get_school_names()
-    
-    # Get specific school
-    school = loader.get_school_by_name("Thomas Coram Centre")
-
-HOW TO SWITCH TO DATABRICKS LATER:
-    # Just change one line in config_v2.py:
-    DATA_SOURCE = "databricks"  # instead of "csv"
-    
-    # The DataLoader will automatically use Databricks connection
 """
 
 import csv
@@ -48,9 +31,6 @@ logger = logging.getLogger(__name__)
 class DataLoader:
     """
     Loads school data from CSV (POC) or Databricks (Production).
-    
-    The beauty of this design: when you're ready for Databricks,
-    you just change DATA_SOURCE in config and it works.
     """
     
     def __init__(self, source: str = None):
@@ -188,15 +168,7 @@ class DataLoader:
         return school
     
     def _load_from_databricks(self) -> List[School]:
-        """
-        Load schools from Databricks.
-        
-        THIS IS A PLACEHOLDER FOR PHASE 2.
-        When your Databricks connection is ready, we'll implement this.
-        
-        The query will look something like:
-            SELECT * FROM main.schools.edco_schools
-        """
+
         logger.warning("⚠️ Databricks connection not yet implemented")
         logger.info("📝 When ready, configure DATABRICKS_CONFIG in config_v2.py")
         
@@ -218,9 +190,6 @@ class DataLoader:
         # 
         # return [self._row_to_school(row) for row in rows]
     
-    # =========================================================================
-    # PUBLIC METHODS - These are what you'll use in the app
-    # =========================================================================
     
     def get_all_schools(self) -> List[School]:
         """Get all schools from the data source."""
@@ -327,11 +296,6 @@ class DataLoader:
         return self.load()
 
 
-# =============================================================================
-# SINGLETON INSTANCE
-# =============================================================================
-# Create a global instance for easy import
-
 _loader_instance: Optional[DataLoader] = None
 
 def get_data_loader() -> DataLoader:
@@ -348,10 +312,6 @@ def get_data_loader() -> DataLoader:
         _loader_instance = DataLoader()
     return _loader_instance
 
-
-# =============================================================================
-# TESTING
-# =============================================================================
 
 if __name__ == "__main__":
     # Test the data loader
