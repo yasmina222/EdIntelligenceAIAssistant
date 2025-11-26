@@ -331,7 +331,7 @@ def display_conversation_starters(school: School, service):
                 if starter.source:
                     if starter.source.startswith("http"):
                         # It's a URL (likely Ofsted report)
-                        st.markdown(f"📄 **Source:** [View Ofsted Report]({starter.source})")
+                        st.markdown(f" **Source:** [View Ofsted Report]({starter.source})")
                     else:
                         st.caption(f"📊 Source: {starter.source}")
                 
@@ -340,9 +340,9 @@ def display_conversation_starters(school: School, service):
     
     # Ofsted info display (if available)
     if school.ofsted and school.ofsted.rating:
-        st.info(f"📋 **Ofsted Rating:** {school.ofsted.rating} | **Inspected:** {school.ofsted.inspection_date or 'Unknown'}")
+        st.info(f" **Ofsted Rating:** {school.ofsted.rating} | **Inspected:** {school.ofsted.inspection_date or 'Unknown'}")
         if school.ofsted.report_url:
-            st.markdown(f"[📄 View Full Ofsted Report]({school.ofsted.report_url})")
+            st.markdown(f"[ View Full Ofsted Report]({school.ofsted.report_url})")
     
     st.divider()
     
@@ -365,9 +365,9 @@ def display_conversation_starters(school: School, service):
         )
     
     with col3:
-        if st.button("🤖 Generate Conversation Starters", type="primary"):
+        if st.button(" Generate Conversation Starters", type="primary"):
             if include_ofsted:
-                with st.spinner("🔍 Analyzing Ofsted report + generating insights..."):
+                with st.spinner(" Analyzing Ofsted report + generating insights..."):
                     # Use the new method that includes Ofsted
                     school_with_starters = service.get_school_intelligence_with_ofsted(
                         school.school_name,
@@ -461,7 +461,7 @@ def display_financial_data(school: School):
 def display_full_details(school: School):
     """Display all school details in a structured way"""
     
-    st.subheader("📋 Full School Details")
+    st.subheader(" Full School Details")
     
     # Convert to dict for display
     details = {
