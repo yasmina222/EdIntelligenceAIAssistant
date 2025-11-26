@@ -58,7 +58,7 @@ def check_password() -> bool:
     if st.session_state.authenticated:
         return True
     
-    st.title("🔒 School Research Assistant")
+    st.title(" School Research Assistant")
     
     password = st.text_input("Enter Password", type="password", key="password_input")
     
@@ -186,7 +186,7 @@ def main():
     service = get_intelligence_service()
     
     # Header
-    st.title("🎓 School Research Assistant")
+    st.title(" School Research Assistant")
     
     # Load schools on startup (this is instant - from CSV)
     with st.spinner("Loading schools..."):
@@ -268,7 +268,7 @@ def display_school(school: School, service):
     """Display school details and conversation starters"""
     
     # School header
-    st.subheader(f"🏫 {school.school_name}")
+    st.subheader(f"{school.school_name}")
     
     # Quick info row
     col1, col2, col3, col4 = st.columns(4)
@@ -287,7 +287,7 @@ def display_school(school: School, service):
     
     # Tabs for different sections
     tab1, tab2, tab3, tab4 = st.tabs([
-        "💬 Conversation Starters",
+        " Conversation Starters",
         "👤 Contact Info",
         "💰 Financial Data",
         "📋 Full Details"
