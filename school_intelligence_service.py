@@ -1,6 +1,6 @@
 """
 School Research Assistant - Intelligence Service
-=================================================
+
 Replaces: processor_premium.py
 
 WHAT THIS FILE DOES:
@@ -176,9 +176,9 @@ class SchoolIntelligenceService:
             self.ofsted_chain = get_ofsted_chain()
         return self.ofsted_chain
     
-    # =========================================================================
+    # 
     # DATA ACCESS METHODS
-    # =========================================================================
+    # 
     
     def get_all_schools(self) -> List[School]:
         """Get all schools from the data source"""
@@ -196,9 +196,9 @@ class SchoolIntelligenceService:
         """Get data statistics"""
         return self.data_loader.get_statistics()
     
-    # =========================================================================
+    # 
     # INTELLIGENCE METHODS (with LLM calls)
-    # =========================================================================
+    # 
     
     def get_school_intelligence(
         self, 
@@ -430,9 +430,9 @@ class SchoolIntelligenceService:
         """Get schools that spend on agency staff"""
         return self.data_loader.get_schools_with_agency_spend()
     
-    # =========================================================================
+    # 
     # CACHE MANAGEMENT
-    # =========================================================================
+    # 
     
     def clear_cache(self, school_name: str = None) -> int:
         """Clear cache for one school or all schools"""
@@ -448,9 +448,9 @@ class SchoolIntelligenceService:
         return self.data_loader.refresh()
 
 
-# =============================================================================
+# =
 # SINGLETON INSTANCE
-# =============================================================================
+# 
 
 _service_instance: Optional[SchoolIntelligenceService] = None
 
@@ -468,9 +468,8 @@ def get_intelligence_service() -> SchoolIntelligenceService:
     return _service_instance
 
 
-# =============================================================================
+
 # TESTING
-# =============================================================================
 
 if __name__ == "__main__":
     # Set up logging
