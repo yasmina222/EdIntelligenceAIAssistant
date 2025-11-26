@@ -1,29 +1,13 @@
 """
 School Research Assistant - Prompt Templates
-=============================================
 Replaces: Prompts scattered across ai_engine_premium.py, ofsted_analyzer_v2.py, 
           financial_data_engine.py, vacancy_detector.py
 
-WHY CENTRALIZE PROMPTS?
-- Easy to update and version control
-- Consistent formatting across all prompts
-- Easy to A/B test different prompts
-- Clear documentation of what each prompt does
-
-HOW LANGCHAIN USES THESE:
-- ChatPromptTemplate.from_messages() creates the prompt
-- Variables in {curly_braces} get filled in at runtime
-- The LLM response is parsed into Pydantic models automatically
 """
 
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 
 
-# =============================================================================
-# CONVERSATION STARTERS PROMPT
-# =============================================================================
-# This is the MAIN prompt - it takes all school data and generates 
-# personalized conversation starters for sales consultants
 
 CONVERSATION_STARTERS_SYSTEM = """You are an expert sales coach for Supporting Education Group, a leading education recruitment company in the UK.
 
@@ -94,10 +78,6 @@ def get_conversation_starters_prompt() -> ChatPromptTemplate:
     ])
 
 
-# =============================================================================
-# FINANCIAL ANALYSIS PROMPT
-# =============================================================================
-# Specifically for analyzing financial data and generating cost-focused starters
 
 FINANCIAL_ANALYSIS_SYSTEM = """You are a financial analyst specializing in UK school budgets and staffing costs.
 
@@ -135,10 +115,6 @@ def get_financial_analysis_prompt() -> ChatPromptTemplate:
     ])
 
 
-# =============================================================================
-# OFSTED ANALYSIS PROMPT
-# =============================================================================
-# For analyzing Ofsted reports and identifying staffing-related improvement areas
 
 OFSTED_ANALYSIS_SYSTEM = """You are an Ofsted specialist who understands how inspection reports relate to school staffing needs.
 
@@ -173,10 +149,6 @@ def get_ofsted_analysis_prompt() -> ChatPromptTemplate:
     ])
 
 
-# =============================================================================
-# QUICK SUMMARY PROMPT
-# =============================================================================
-# For generating a brief school summary for the UI
 
 QUICK_SUMMARY_SYSTEM = """You are a research assistant. Your job is to create brief, factual summaries of schools for sales consultants to quickly understand who they're calling."""
 
@@ -196,10 +168,6 @@ def get_quick_summary_prompt() -> ChatPromptTemplate:
     ])
 
 
-# =============================================================================
-# SCHEMA FOR STRUCTURED OUTPUT
-# =============================================================================
-# This tells LangChain exactly what format we expect from the LLM
 
 CONVERSATION_STARTER_SCHEMA = {
     "type": "object",
