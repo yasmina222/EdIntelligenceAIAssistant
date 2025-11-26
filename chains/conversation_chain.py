@@ -3,22 +3,6 @@ School Research Assistant - Conversation Chain
 ===============================================
 Replaces: ai_engine_premium.py (the GPT analysis part)
 
-WHAT THIS FILE DOES:
-- Creates a LangChain "chain" that generates conversation starters
-- Takes school data → sends to LLM → returns structured conversation starters
-- Supports both Claude (Anthropic) and GPT (OpenAI)
-
-HOW LANGCHAIN CHAINS WORK:
-1. Prompt template defines what we ask the LLM
-2. LLM (Claude or GPT) generates a response
-3. Output parser converts the response into a Pydantic model
-4. We get clean, validated data back
-
-WHY THIS IS BETTER:
-- Automatic retry on failures
-- Structured outputs (no manual JSON parsing)
-- Easy to switch between LLMs
-- Built-in caching support
 """
 
 import logging
@@ -39,11 +23,7 @@ logger = logging.getLogger(__name__)
 
 
 def get_llm():
-    """
-    Get the appropriate LLM based on config.
-    
-    Returns either ChatAnthropic (Claude) or ChatOpenAI (GPT).
-    """
+
     api_keys = get_api_keys()
     
     if LLM_PROVIDER == "anthropic":
@@ -72,13 +52,6 @@ def get_llm():
 
 
 class ConversationChain:
-    """
-    LangChain chain for generating conversation starters.
-    
-    Usage:
-        chain = ConversationChain()
-        result = chain.generate(school, num_starters=5)
-    """
     
     def __init__(self):
         """Initialize the chain with LLM and prompt"""
@@ -93,16 +66,7 @@ class ConversationChain:
         logger.info("✅ ConversationChain initialized")
     
     def generate(self, school: School, num_starters: int = 5) -> ConversationStarterResponse:
-        """
-        Generate conversation starters for a school.
-        
-        Args:
-            school: The School object with all data
-            num_starters: How many starters to generate (default 5)
-            
-        Returns:
-            ConversationStarterResponse with starters and metadata
-        """
+
         try:
             # Convert school to text context for the LLM
             school_context = school.to_llm_context()
@@ -137,11 +101,7 @@ class ConversationChain:
             )
     
     async def agenerate(self, school: School, num_starters: int = 5) -> ConversationStarterResponse:
-        """
-        Async version of generate() for better performance.
-        
-        Use this when processing multiple schools in parallel.
-        """
+
         try:
             school_context = school.to_llm_context()
             
@@ -172,19 +132,8 @@ class ConversationChain:
             )
 
 
-# =============================================================================
-# STANDALONE FUNCTIONS (for simpler use cases)
-# =============================================================================
-
 def generate_conversation_starters(school: School, num_starters: int = 5) -> list[ConversationStarter]:
-    """
-    Simple function to generate conversation starters.
-    
-    Usage:
-        starters = generate_conversation_starters(school)
-        for s in starters:
-            print(s.topic, s.detail)
-    """
+
     chain = ConversationChain()
     response = chain.generate(school, num_starters)
     return response.conversation_starters
@@ -207,10 +156,6 @@ def generate_quick_summary(school: School) -> str:
     
     return result.content
 
-
-# =============================================================================
-# TESTING
-# =============================================================================
 
 if __name__ == "__main__":
     # Test the chain with sample data
