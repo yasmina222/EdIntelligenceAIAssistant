@@ -1,13 +1,7 @@
 """
 School Research Assistant - Data Loader
 ========================================
-NEW FILE (doesn't replace anything - this is new functionality)
-
-GOAL:
-- Loads schools from the CSV file
-- Converts each row into a School Pydantic model
-- Provides search/filter functions
-- FUTURE: Will connect to Databricks with minimal code changes
+UPDATED: Now loads from london_schools_financial_CLEAN.csv with total spend values
 
 """
 
@@ -31,15 +25,11 @@ logger = logging.getLogger(__name__)
 class DataLoader:
     """
     Loads school data from CSV (POC) or Databricks (Production).
+    
+    UPDATED: Now handles the new financial data format with total spend values.
     """
     
     def __init__(self, source: str = None):
-        """
-        Initialize the data loader.
-        
-        Args:
-            source: Override the config source ("csv" or "databricks")
-        """
         self.source = source or DATA_SOURCE
         self._schools_cache: Optional[List[School]] = None
         self._schools_by_name: Dict[str, School] = {}
@@ -48,12 +38,7 @@ class DataLoader:
         logger.info(f"📚 DataLoader initialized with source: {self.source}")
     
     def load(self) -> List[School]:
-        """
-        Load all schools from the data source.
-        
-        This is called once when the app starts.
-        Results are cached so we don't reload on every request.
-        """
+        """Load all schools from the data source."""
         if self._schools_cache is not None:
             logger.info(f"📦 Returning {len(self._schools_cache)} cached schools")
             return self._schools_cache
@@ -77,21 +62,29 @@ class DataLoader:
         """
         Load schools from CSV file.
         
-        This reads your camden_schools_llm_ready.csv and converts
-        each row into a School object with proper validation.
+        UPDATED: Now reads from london_schools_financial_CLEAN.csv
+        with the new column format from the government download.
         """
         schools = []
         
-        # Find the CSV file
-        csv_path = Path(CSV_FILE_PATH)
-        if not csv_path.exists():
-            # Try relative to current directory
-            csv_path = Path(__file__).parent / CSV_FILE_PATH
-        if not csv_path.exists():
-            # Try data folder
-            csv_path = Path(__file__).parent / "data" / "camden_schools_llm_ready.csv"
-        if not csv_path.exists():
-            logger.error(f"❌ CSV file not found: {CSV_FILE_PATH}")
+        # Try multiple possible paths
+        possible_paths = [
+            CSV_FILE_PATH,
+            Path(__file__).parent / CSV_FILE_PATH,
+            Path(__file__).parent / "data" / "london_schools_financial_CLEAN.csv",
+            "data/london_schools_financial_CLEAN.csv",
+            "london_schools_financial_CLEAN.csv",
+        ]
+        
+        csv_path = None
+        for path in possible_paths:
+            p = Path(path)
+            if p.exists():
+                csv_path = p
+                break
+        
+        if not csv_path:
+            logger.error(f"❌ CSV file not found. Tried: {possible_paths}")
             return []
         
         logger.info(f"📖 Reading CSV from: {csv_path}")
@@ -102,51 +95,102 @@ class DataLoader:
             for row in reader:
                 try:
                     school = self._row_to_school(row)
-                    schools.append(school)
+                    if school:
+                        schools.append(school)
                 except Exception as e:
                     logger.warning(f"⚠️ Error parsing row: {e}")
                     continue
         
         return schools
     
-    def _row_to_school(self, row: Dict[str, Any]) -> School:
+    def _safe_float(self, value) -> Optional[float]:
+        """Safely convert a value to float"""
+        if value is None or value == '' or value == 'nan':
+            return None
+        try:
+            return float(value)
+        except (ValueError, TypeError):
+            return None
+    
+    def _safe_int(self, value) -> Optional[int]:
+        """Safely convert a value to int"""
+        if value is None or value == '' or value == 'nan':
+            return None
+        try:
+            return int(float(value))
+        except (ValueError, TypeError):
+            return None
+    
+    def _row_to_school(self, row: Dict[str, Any]) -> Optional[School]:
         """
         Convert a CSV row to a School object.
         
-        This handles the mapping between your CSV columns 
-        and our Pydantic models.
+        UPDATED: Maps from the new government download format:
+        - URN, SchoolName, LAName, SchoolType, TotalPupils
+        - TeachingStaffCosts, SupplyTeachingStaffCosts, AgencySupplyTeachingStaffCosts
+        - EducationSupportStaffCosts, EducationalConsultancyCosts
         """
-        # Create headteacher contact
+        # Skip rows without URN or marked as failed
+        status = row.get('status', 'success')
+        if status != 'success':
+            return None
+        
+        urn = row.get('URN') or row.get('urn')
+        if not urn:
+            return None
+        
+        # Get school name (try multiple column names)
+        school_name = (
+            row.get('SchoolName') or 
+            row.get('school_name') or 
+            row.get('school_name_gias') or
+            f"School {urn}"
+        )
+        
+        # Get LA name
+        la_name = (
+            row.get('LAName') or 
+            row.get('la_name') or 
+            row.get('la_name_gias')
+        )
+        
+        # Get pupil count
+        pupil_count = self._safe_int(
+            row.get('TotalPupils') or row.get('pupil_count')
+        )
+        
+        # Create financial data with TOTAL SPEND values
+        financial = FinancialData(
+            total_expenditure=self._safe_float(row.get('TotalExpenditure')),
+            total_pupils=self._safe_float(row.get('TotalPupils')),
+            total_teaching_support_costs=self._safe_float(row.get('TotalTeachingSupportStaffCosts')),
+            teaching_staff_costs=self._safe_float(row.get('TeachingStaffCosts')),
+            supply_teaching_costs=self._safe_float(row.get('SupplyTeachingStaffCosts')),
+            agency_supply_costs=self._safe_float(row.get('AgencySupplyTeachingStaffCosts')),
+            educational_support_costs=self._safe_float(row.get('EducationSupportStaffCosts')),
+            educational_consultancy_costs=self._safe_float(row.get('EducationalConsultancyCosts')),
+        )
+        
+        # Create headteacher contact if we have GIAS data
         headteacher = None
-        if row.get('headteacher') and row.get('headteacher') != '':
+        head_name = row.get('headteacher') or row.get('HeadTeacher')
+        if head_name and head_name != '' and head_name != 'nan':
             headteacher = Contact(
-                full_name=row.get('headteacher', ''),
+                full_name=str(head_name),
                 role=ContactRole.HEADTEACHER,
                 title=row.get('head_title'),
                 first_name=row.get('head_first_name'),
                 last_name=row.get('head_last_name'),
                 phone=row.get('phone'),
-                confidence_score=1.0  # From official data
+                confidence_score=1.0
             )
-        
-        # Create financial data
-        financial = FinancialData(
-            total_teaching_support_spend_per_pupil=row.get('total_teaching_support_spend_per_pupil'),
-            comparison_to_other_schools=row.get('comparison_to_other_schools'),
-            total_teaching_support_per_pupil=row.get('total_teaching_support_per_pupil'),
-            teaching_staff_costs=row.get('teaching_staff_costs'),
-            supply_teaching_costs=row.get('supply_teaching_costs'),
-            agency_supply_costs=row.get('agency_supply_costs'),
-            educational_support_costs=row.get('educational_support_costs'),
-            educational_consultancy_costs=row.get('educational_consultancy_costs'),
-        )
         
         # Create school object
         school = School(
-            urn=str(row.get('urn', '')),
-            school_name=row.get('school_name', ''),
-            la_name=row.get('la_name'),
-            school_type=row.get('school_type'),
+            urn=str(int(float(urn))),  # Clean URN format
+            school_name=school_name,
+            la_name=la_name,
+            school_type=row.get('SchoolType') or row.get('school_type'),
             phase=row.get('phase'),
             address_1=row.get('address_1'),
             address_2=row.get('address_2'),
@@ -158,7 +202,7 @@ class DataLoader:
             website=row.get('website'),
             trust_code=row.get('trust_code'),
             trust_name=row.get('trust_name'),
-            pupil_count=row.get('pupil_count'),
+            pupil_count=pupil_count,
             headteacher=headteacher,
             contacts=[headteacher] if headteacher else [],
             financial=financial,
@@ -168,27 +212,12 @@ class DataLoader:
         return school
     
     def _load_from_databricks(self) -> List[School]:
-
+        """Databricks connection - placeholder for future"""
         logger.warning("⚠️ Databricks connection not yet implemented")
-        logger.info("📝 When ready, configure DATABRICKS_CONFIG in config_v2.py")
-        
-        # For now, fall back to CSV
         return self._load_from_csv()
-        
-        # FUTURE IMPLEMENTATION:
-        # from databricks import sql
-        # 
-        # connection = sql.connect(
-        #     server_hostname=DATABRICKS_CONFIG["host"],
-        #     http_path=f"/sql/1.0/warehouses/{DATABRICKS_CONFIG['warehouse_id']}",
-        #     access_token=DATABRICKS_CONFIG["token"]
-        # )
-        # 
-        # cursor = connection.cursor()
-        # cursor.execute(f"SELECT * FROM {DATABRICKS_CONFIG['catalog']}.{DATABRICKS_CONFIG['schema']}.{DATABRICKS_CONFIG['table']}")
-        # rows = cursor.fetchall()
-        # 
-        # return [self._row_to_school(row) for row in rows]
+    
+    
+    # PUBLIC METHODS
     
     
     def get_all_schools(self) -> List[School]:
@@ -196,117 +225,104 @@ class DataLoader:
         return self.load()
     
     def get_school_names(self) -> List[str]:
-        """
-        Get list of all school names (for dropdown).
-        
-        Returns sorted list of school names.
-        """
+        """Get list of all school names (for dropdown)."""
         schools = self.load()
         return sorted([s.school_name for s in schools])
     
     def get_school_by_name(self, name: str) -> Optional[School]:
-        """
-        Get a school by its name.
-        
-        Args:
-            name: The school name to look up
-            
-        Returns:
-            School object or None if not found
-        """
-        self.load()  # Ensure data is loaded
+        """Get a school by its name."""
+        self.load()
         return self._schools_by_name.get(name)
     
     def get_school_by_urn(self, urn: str) -> Optional[School]:
-        """Get a school by its URN (Unique Reference Number)."""
+        """Get a school by its URN."""
         self.load()
         return self._schools_by_urn.get(urn)
     
     def search_schools(self, query: str) -> List[School]:
-        """
-        Search schools by name (simple text matching).
-        
-        For 28 schools, this is fine. For 24,000, we'll use vectors.
-        
-        Args:
-            query: Search term
-            
-        Returns:
-            List of matching schools
-        """
+        """Search schools by name."""
         schools = self.load()
         query_lower = query.lower()
-        
-        return [
-            s for s in schools 
-            if query_lower in s.school_name.lower()
-        ]
+        return [s for s in schools if query_lower in s.school_name.lower()]
     
     def get_schools_by_priority(self, priority: str) -> List[School]:
-        """
-        Get schools by sales priority level.
-        
-        Args:
-            priority: "HIGH", "MEDIUM", or "LOW"
-            
-        Returns:
-            Schools with that priority level
-        """
+        """Get schools by sales priority level."""
         schools = self.load()
         return [s for s in schools if s.get_sales_priority() == priority]
     
-    def get_schools_with_agency_spend(self) -> List[School]:
+    def get_schools_by_borough(self, borough: str) -> List[School]:
+        """Get schools by local authority/borough."""
+        schools = self.load()
+        return [s for s in schools if s.la_name and s.la_name.lower() == borough.lower()]
+    
+    def get_schools_with_agency_spend(self, min_spend: float = 0) -> List[School]:
         """
         Get schools that spend on agency staff.
         
-        These are the best sales prospects!
+        Args:
+            min_spend: Minimum agency spend to filter by (default 0 = any spend)
         """
         schools = self.load()
         return [
             s for s in schools 
-            if s.financial and s.financial.has_agency_spend()
+            if s.financial and s.financial.agency_supply_costs and s.financial.agency_supply_costs > min_spend
         ]
     
-    def get_statistics(self) -> Dict[str, Any]:
-        """
-        Get summary statistics about the loaded data.
-        
-        Useful for the dashboard.
-        """
+    def get_top_agency_spenders(self, limit: int = 20) -> List[School]:
+        """Get schools with highest agency spend."""
+        schools = self.get_schools_with_agency_spend()
+        return sorted(
+            schools,
+            key=lambda s: s.financial.agency_supply_costs or 0,
+            reverse=True
+        )[:limit]
+    
+    def get_boroughs(self) -> List[str]:
+        """Get list of all boroughs/LAs in the data."""
         schools = self.load()
+        boroughs = set(s.la_name for s in schools if s.la_name)
+        return sorted(list(boroughs))
+    
+    def get_statistics(self) -> Dict[str, Any]:
+        """Get summary statistics about the loaded data."""
+        schools = self.load()
+        
+        # Calculate total agency spend
+        total_agency_spend = sum(
+            s.financial.agency_supply_costs or 0 
+            for s in schools 
+            if s.financial
+        )
+        
+        # Count by priority
+        high = len([s for s in schools if s.get_sales_priority() == "HIGH"])
+        medium = len([s for s in schools if s.get_sales_priority() == "MEDIUM"])
+        low = len([s for s in schools if s.get_sales_priority() == "LOW"])
         
         return {
             "total_schools": len(schools),
             "with_agency_spend": len(self.get_schools_with_agency_spend()),
-            "high_priority": len(self.get_schools_by_priority("HIGH")),
-            "medium_priority": len(self.get_schools_by_priority("MEDIUM")),
-            "low_priority": len(self.get_schools_by_priority("LOW")),
+            "total_agency_spend": f"£{total_agency_spend:,.0f}",
+            "high_priority": high,
+            "medium_priority": medium,
+            "low_priority": low,
+            "boroughs": len(self.get_boroughs()),
             "data_source": self.source,
         }
     
     def refresh(self) -> List[School]:
-        """
-        Force reload data from source.
-        
-        Clears the cache and reloads.
-        """
+        """Force reload data from source."""
         self._schools_cache = None
         self._schools_by_name = {}
         self._schools_by_urn = {}
         return self.load()
 
 
+# Singleton instance
 _loader_instance: Optional[DataLoader] = None
 
 def get_data_loader() -> DataLoader:
-    """
-    Get the global DataLoader instance.
-    
-    Usage:
-        from data_loader import get_data_loader
-        loader = get_data_loader()
-        schools = loader.get_all_schools()
-    """
+    """Get the global DataLoader instance."""
     global _loader_instance
     if _loader_instance is None:
         _loader_instance = DataLoader()
@@ -315,33 +331,29 @@ def get_data_loader() -> DataLoader:
 
 if __name__ == "__main__":
     # Test the data loader
+    logging.basicConfig(level=logging.INFO)
+    
     loader = DataLoader()
     
     # Load all schools
     schools = loader.get_all_schools()
     print(f"\n📚 Loaded {len(schools)} schools")
     
-    # Get school names for dropdown
-    names = loader.get_school_names()
-    print(f"\n📋 School names for dropdown:")
-    for name in names[:5]:
-        print(f"   • {name}")
-    print(f"   ... and {len(names) - 5} more")
-    
-    # Get a specific school
-    school = loader.get_school_by_name("Thomas Coram Centre")
-    if school:
-        print(f"\n🏫 School details:")
-        print(f"   Name: {school.school_name}")
-        print(f"   URN: {school.urn}")
-        print(f"   Type: {school.school_type}")
-        print(f"   Headteacher: {school.headteacher.full_name if school.headteacher else 'Unknown'}")
-        print(f"   Priority: {school.get_sales_priority()}")
-        if school.financial:
-            print(f"   Agency costs: {school.financial.agency_supply_costs}")
-    
     # Get statistics
     stats = loader.get_statistics()
     print(f"\n📊 Statistics:")
-    for key, value in stats.items():
-        print(f"   {key}: {value}")
+    for k, v in stats.items():
+        print(f"   {k}: {v}")
+    
+    # Get top agency spenders
+    top_spenders = loader.get_top_agency_spenders(limit=5)
+    print(f"\n🔥 Top 5 Agency Spenders:")
+    for school in top_spenders:
+        spend = school.financial.agency_supply_costs
+        print(f"   • {school.school_name}: £{spend:,.0f}")
+    
+    # Get boroughs
+    boroughs = loader.get_boroughs()
+    print(f"\n🏛️ Boroughs ({len(boroughs)}):")
+    for b in boroughs[:10]:
+        print(f"   • {b}")
