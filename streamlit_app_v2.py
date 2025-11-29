@@ -1,6 +1,11 @@
 """
 School Research Assistant - Streamlit App (v2)
-UPDATED: Now displays total spend values and supports 2,400 London schools
+===============================================
+UPDATED: 
+- Now merges GIAS contacts + Financial data
+- Shows "Local Authority" instead of "Borough"
+- Priority based on total staffing spend (not just agency)
+- Displays headteacher contact details
 """
 
 import streamlit as st
@@ -18,9 +23,9 @@ if str(PROJECT_ROOT) not in sys.path:
 
 # Import our modules
 from school_intelligence_service import get_intelligence_service
-from data_loader import get_data_loader  # FIX: Added missing import
+from data_loader import get_data_loader
 from models_v2 import School, ConversationStarter
-from config_v2 import get_app_password, LLM_PROVIDER, FEATURES
+from config_v2 import get_app_password, LLM_PROVIDER, FEATURES, get_display_label
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -145,12 +150,12 @@ st.markdown("""
         margin: 0.5rem 0;
     }
     
-    .agency-spend-high {
-        background-color: #5D2A2A;
+    .staffing-spend-high {
+        background-color: #2A4D3D;
         padding: 1rem;
         border-radius: 8px;
         margin: 0.5rem 0;
-        border-left: 4px solid #dc3545;
+        border-left: 4px solid #28a745;
     }
     
     .contact-card {
@@ -174,9 +179,10 @@ def main():
         return
     
     service = get_intelligence_service()
+    data_loader = get_data_loader()
     
     st.title("🎓 School Research Assistant")
-    st.caption("Powered by AI • 2,400+ London Schools • Financial Intelligence")
+    st.caption("Powered by AI • London Schools • Financial & Contact Intelligence")
     
     # Load schools
     with st.spinner("Loading schools..."):
@@ -195,22 +201,21 @@ def main():
         
         col3, col4 = st.columns(2)
         with col3:
-            st.metric("With Agency Spend", stats["with_agency_spend"])
+            st.metric("With Contacts", stats.get("with_contacts", 0))
         with col4:
-            st.metric("Boroughs", stats.get("boroughs", 33))
+            st.metric("Local Authorities", stats.get("boroughs", 33))
         
-        # Total agency spend
-        st.metric("Total Agency Spend", stats.get("total_agency_spend", "N/A"))
+        # Total staffing spend
+        st.metric("Total Staffing Spend", stats.get("total_staffing_spend", "N/A"))
         
         st.divider()
         
-        # Borough filter - FIX: Now using the properly imported get_data_loader
-        st.subheader("🏛️ Filter by Borough")
-        data_loader = get_data_loader()
-        boroughs = data_loader.get_boroughs()
-        selected_borough = st.selectbox(
-            "Select Borough",
-            options=["All Boroughs"] + boroughs,
+        # Local Authority filter (not "Borough")
+        st.subheader("🏛️ Filter by Local Authority")
+        local_authorities = data_loader.get_boroughs()
+        selected_la = st.selectbox(
+            "Select Local Authority",
+            options=["All Local Authorities"] + local_authorities,
             index=0
         )
         
@@ -218,7 +223,7 @@ def main():
         
         st.subheader("🎯 Quick Filters")
         
-        if st.button("🔥 Top Agency Spenders"):
+        if st.button("💰 Top Staffing Spenders"):
             st.session_state.filter = "top_spenders"
         if st.button("⚡ High Priority"):
             st.session_state.filter = "high"
@@ -228,14 +233,13 @@ def main():
     # Main content
     st.header("🔍 Search Schools")
     
-    # Filter by borough if selected - FIX: Now using the properly imported get_data_loader
-    data_loader = get_data_loader()
-    if selected_borough and selected_borough != "All Boroughs":
+    # Filter by Local Authority if selected
+    if selected_la and selected_la != "All Local Authorities":
         filtered_names = [
-            s.school_name for s in data_loader.get_schools_by_borough(selected_borough)
+            s.school_name for s in data_loader.get_schools_by_borough(selected_la)
         ]
         display_names = sorted(filtered_names)
-        st.info(f"Showing {len(display_names)} schools in {selected_borough}")
+        st.info(f"Showing {len(display_names)} schools in {selected_la}")
     else:
         display_names = school_names
     
@@ -255,10 +259,11 @@ def main():
         else:
             st.error(f"School not found: {selected_school_name}")
     else:
-        # Show top agency spenders - FIX: Now using the properly imported get_data_loader
-        st.subheader("🔥 Top Agency Spenders (Best Sales Opportunities)")
+        # Show top staffing spenders (not agency-only)
+        st.subheader("💰 Top Staffing Spenders (Best Opportunities)")
+        st.caption("Schools with largest staffing budgets - opportunities for permanent, temporary & agency placements")
         
-        top_spenders = data_loader.get_top_agency_spenders(limit=10)
+        top_spenders = data_loader.get_top_spenders(limit=10, spend_type="total")
         
         if top_spenders:
             for school in top_spenders:
@@ -270,7 +275,7 @@ def main():
                         st.rerun()
                 
                 with col2:
-                    spend = school.financial.agency_supply_costs or 0
+                    spend = school.financial.total_teaching_support_costs or 0
                     st.markdown(f"**£{spend:,.0f}**")
                 
                 with col3:
@@ -295,7 +300,7 @@ def display_school(school: School, service):
     with col1:
         st.metric("URN", school.urn)
     with col2:
-        st.metric("Borough", school.la_name or "Unknown")
+        st.metric("Local Authority", school.la_name or "Unknown")
     with col3:
         st.metric("Type", school.school_type or "Unknown")
     with col4:
@@ -304,13 +309,13 @@ def display_school(school: School, service):
         priority = school.get_sales_priority()
         st.metric("Priority", priority)
     
-    # Agency spend highlight
-    if school.financial and school.financial.has_agency_spend():
-        spend = school.financial.agency_supply_costs
+    # Total staffing spend highlight (not just agency)
+    if school.financial and school.financial.total_teaching_support_costs:
+        spend = school.financial.total_teaching_support_costs
         st.markdown(f"""
-        <div class="agency-spend-high">
-            <h3>🔥 Agency Spend: £{spend:,.0f}</h3>
-            <p>This school is already spending on agency staff - strong sales opportunity!</p>
+        <div class="staffing-spend-high">
+            <h3>💰 Total Staffing Budget: £{spend:,.0f}</h3>
+            <p>This school invests significantly in staffing - opportunity for permanent, temporary & agency placements.</p>
         </div>
         """, unsafe_allow_html=True)
     
@@ -319,7 +324,7 @@ def display_school(school: School, service):
     # Tabs
     tab1, tab2, tab3, tab4 = st.tabs([
         "💬 Conversation Starters",
-        "👤 Contact Info",
+        "👤 Contact Details",
         "💰 Financial Data",
         "📋 Full Details"
     ])
@@ -404,79 +409,128 @@ def display_conversation_starters(school: School, service):
 
 
 def display_contact_info(school: School):
-    """Display contact information"""
+    """Display contact information - UPDATED to show GIAS data"""
     
     st.subheader("👤 Key Contacts")
     
     if school.headteacher:
+        # Parse headteacher name for title
+        head = school.headteacher
+        
         st.markdown(f"""
         <div class="contact-card">
-            <h4>{school.headteacher.full_name}</h4>
+            <h4>🎓 {head.full_name}</h4>
             <p><strong>Role:</strong> Headteacher</p>
-            <p><strong>Phone:</strong> {school.phone or 'Not available'}</p>
-            <p><strong>Website:</strong> <a href="{school.website}" target="_blank">{school.website or 'Not available'}</a></p>
         </div>
         """, unsafe_allow_html=True)
+        
+        # Contact details in columns
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.write("**📞 Phone:**")
+            if school.phone:
+                st.write(school.phone)
+            else:
+                st.write("Not available")
+        
+        with col2:
+            st.write("**🌐 Website:**")
+            if school.website:
+                # Clean up website URL
+                website = school.website
+                if not website.startswith('http'):
+                    website = f"http://{website}"
+                st.markdown(f"[{school.website}]({website})")
+            else:
+                st.write("Not available")
     else:
-        st.info("No headteacher information available")
+        st.info("No headteacher information available in GIAS data")
     
-    st.write("**Address:**")
-    st.write(school.get_full_address() or "Address not available")
+    st.divider()
+    
+    # Address section
+    st.write("**📍 Address:**")
+    address = school.get_full_address()
+    if address:
+        st.write(address)
+    else:
+        st.write("Address not available")
+    
+    # Trust info if available
+    if school.trust_name:
+        st.divider()
+        st.write("**🏛️ Trust:**")
+        st.write(school.trust_name)
 
 
 def display_financial_data(school: School):
-    """Display financial data - UPDATED FOR TOTAL SPEND"""
+    """Display financial data - UPDATED to highlight total staffing"""
     
     st.subheader("💰 Financial Data")
+    st.caption("Data from Government Financial Benchmarking Tool")
     
-    if school.financial:
+    if school.financial and school.financial.has_financial_data():
         fin = school.financial
         
-        # Key metrics row
+        # Key metrics row - highlight total staffing first
         col1, col2, col3 = st.columns(3)
         
         with col1:
+            if fin.total_teaching_support_costs:
+                st.metric("Total Staffing Costs ⭐", f"£{fin.total_teaching_support_costs:,.0f}")
+            else:
+                st.metric("Total Staffing Costs", "No data")
+        
+        with col2:
             if fin.total_expenditure:
                 st.metric("Total Expenditure", f"£{fin.total_expenditure:,.0f}")
         
-        with col2:
-            if fin.teaching_staff_costs:
-                st.metric("Teaching Staff (E01)", f"£{fin.teaching_staff_costs:,.0f}")
-        
         with col3:
-            if fin.agency_supply_costs:
-                st.metric("Agency Supply (E26)", f"£{fin.agency_supply_costs:,.0f}")
+            if fin.agency_supply_costs and fin.agency_supply_costs > 0:
+                st.metric("Agency Supply", f"£{fin.agency_supply_costs:,.0f}")
+            else:
+                st.metric("Agency Supply", "£0")
         
         # Detailed breakdown
         st.divider()
         st.write("**Cost Breakdown:**")
         
         costs = [
-            ("Teaching Staff (E01)", fin.teaching_staff_costs),
-            ("Supply Teaching (E02)", fin.supply_teaching_costs),
-            ("Educational Support (E03)", fin.educational_support_costs),
-            ("Agency Supply (E26)", fin.agency_supply_costs),
-            ("Consultancy (E27)", fin.educational_consultancy_costs),
+            ("Total Staffing Costs", fin.total_teaching_support_costs, True),
+            ("Teaching Staff (E01)", fin.teaching_staff_costs, False),
+            ("Supply Teaching (E02)", fin.supply_teaching_costs, False),
+            ("Educational Support (E03)", fin.educational_support_costs, False),
+            ("Agency Supply (E26)", fin.agency_supply_costs, False),
+            ("Consultancy (E27)", fin.educational_consultancy_costs, False),
         ]
         
-        for label, value in costs:
+        for label, value, highlight in costs:
             if value and value > 0:
                 # Calculate per pupil if we have pupil count
                 if fin.total_pupils and fin.total_pupils > 0:
                     per_pupil = value / fin.total_pupils
-                    st.write(f"• **{label}:** £{value:,.0f} (£{per_pupil:,.0f} per pupil)")
+                    if highlight:
+                        st.write(f"• **{label}:** £{value:,.0f} (£{per_pupil:,.0f} per pupil) ⭐")
+                    else:
+                        st.write(f"• {label}: £{value:,.0f} (£{per_pupil:,.0f} per pupil)")
                 else:
-                    st.write(f"• **{label}:** £{value:,.0f}")
+                    st.write(f"• {label}: £{value:,.0f}")
         
-        # Sales insight
-        if fin.has_agency_spend():
-            spend = fin.agency_supply_costs
-            st.warning(f"""
-            💡 **Sales Insight:** This school is spending **£{spend:,.0f}** on agency staff annually. 
-            That's a significant budget we could help them use more effectively!
+        # Sales insight - now about total staffing
+        st.divider()
+        if fin.total_teaching_support_costs and fin.total_teaching_support_costs >= 500000:
+            st.success(f"""
+            💡 **Sales Insight:** This school invests **£{fin.total_teaching_support_costs:,.0f}** in staffing annually. 
+            That's a HIGH priority opportunity for permanent, temporary, and agency placements!
+            """)
+        elif fin.total_teaching_support_costs and fin.total_teaching_support_costs >= 200000:
+            st.info(f"""
+            💡 **Sales Insight:** This school invests **£{fin.total_teaching_support_costs:,.0f}** in staffing annually. 
+            Good opportunity for our recruitment services.
             """)
     else:
-        st.info("No financial data available")
+        st.info("No financial data available for this school")
 
 
 def display_full_details(school: School):
@@ -490,18 +544,20 @@ def display_full_details(school: School):
         "Local Authority": school.la_name,
         "School Type": school.school_type,
         "Phase": school.phase,
-        "Pupil Count": school.pupil_count,
-        "Address": school.get_full_address(),
+        "Number of Pupils": school.pupil_count,
+        "Headteacher": school.headteacher.full_name if school.headteacher else "N/A",
         "Phone": school.phone,
         "Website": school.website,
+        "Address": school.get_full_address(),
         "Trust Name": school.trust_name or "N/A",
         "Sales Priority": school.get_sales_priority(),
     }
     
     # Add financial summary
     if school.financial:
-        details["Agency Spend"] = school.financial.get_agency_spend_formatted()
-        details["Agency Per Pupil"] = school.financial.get_agency_per_pupil_formatted()
+        details["Total Staffing Spend"] = school.financial.get_total_staffing_formatted()
+        if school.financial.agency_supply_costs:
+            details["Agency Spend"] = school.financial.get_agency_spend_formatted()
     
     df = pd.DataFrame([
         {"Field": k, "Value": str(v) if v else "N/A"} 
@@ -509,6 +565,10 @@ def display_full_details(school: School):
     ])
     
     st.dataframe(df, hide_index=True, use_container_width=True)
+    
+    # Data source info
+    st.divider()
+    st.caption(f"📊 Data source: {school.data_source}")
 
 
 # =============================================================================
