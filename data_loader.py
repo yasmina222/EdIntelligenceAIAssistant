@@ -1,8 +1,11 @@
 """
 School Research Assistant - Data Loader
 ========================================
-UPDATED: Now loads from london_schools_financial_CLEAN.csv with total spend values
+UPDATED: Now loads and MERGES two CSV files:
+1. Financial data (government benchmarking) - spending figures
+2. GIAS data (school contacts) - headteacher, phone, address, website
 
+Both files are linked by URN (Unique Reference Number)
 """
 
 import csv
@@ -17,16 +20,23 @@ from models_v2 import (
     FinancialData, 
     OfstedData
 )
-from config_v2 import DATA_SOURCE, CSV_FILE_PATH, DATABRICKS_CONFIG
+from config_v2 import (
+    DATA_SOURCE, 
+    CSV_FILE_PATH_FINANCIAL, 
+    CSV_FILE_PATH_GIAS,
+    DATABRICKS_CONFIG
+)
 
 logger = logging.getLogger(__name__)
 
 
 class DataLoader:
     """
-    Loads school data from CSV (POC) or Databricks (Production).
+    Loads and merges school data from two CSV sources:
+    - Financial CSV: Spending data from government benchmarking tool
+    - GIAS CSV: Contact details (headteacher, phone, address, etc.)
     
-    UPDATED: Now handles the new financial data format with total spend values.
+    Both are merged using URN as the common key.
     """
     
     def __init__(self, source: str = None):
@@ -44,7 +54,7 @@ class DataLoader:
             return self._schools_cache
         
         if self.source == "csv":
-            schools = self._load_from_csv()
+            schools = self._load_and_merge_csvs()
         elif self.source == "databricks":
             schools = self._load_from_databricks()
         else:
@@ -58,54 +68,126 @@ class DataLoader:
         logger.info(f"✅ Loaded {len(schools)} schools from {self.source}")
         return schools
     
-    def _load_from_csv(self) -> List[School]:
-        """
-        Load schools from CSV file.
-        
-        UPDATED: Now reads from london_schools_financial_CLEAN.csv
-        with the new column format from the government download.
-        """
-        schools = []
-        
-        # Try multiple possible paths
+    def _find_csv_file(self, csv_path: str) -> Optional[Path]:
+        """Find a CSV file, trying multiple possible locations"""
         possible_paths = [
-            CSV_FILE_PATH,
-            Path(__file__).parent / CSV_FILE_PATH,
-            Path(__file__).parent / "data" / "london_schools_financial_CLEAN.csv",
-            "data/london_schools_financial_CLEAN.csv",
-            "london_schools_financial_CLEAN.csv",
+            csv_path,
+            Path(__file__).parent / csv_path,
+            Path(__file__).parent / "data" / Path(csv_path).name,
+            f"data/{Path(csv_path).name}",
+            Path(csv_path).name,
         ]
         
-        csv_path = None
         for path in possible_paths:
             p = Path(path)
             if p.exists():
-                csv_path = p
-                break
+                return p
         
-        if not csv_path:
-            logger.error(f"❌ CSV file not found. Tried: {possible_paths}")
-            return []
+        return None
+    
+    def _load_and_merge_csvs(self) -> List[School]:
+        """
+        Load both CSV files and merge them on URN.
         
-        logger.info(f"📖 Reading CSV from: {csv_path}")
+        Strategy:
+        1. Load GIAS data first (has contact details)
+        2. Load Financial data
+        3. Merge: GIAS provides base school info, Financial adds spending data
+        """
+        schools = []
         
-        with open(csv_path, 'r', encoding='utf-8-sig') as f:
-            reader = csv.DictReader(f)
+        # Step 1: Load GIAS data (contacts, addresses, etc.)
+        gias_data = self._load_gias_csv()
+        logger.info(f"📖 Loaded {len(gias_data)} schools from GIAS")
+        
+        # Step 2: Load Financial data
+        financial_data = self._load_financial_csv()
+        logger.info(f"💰 Loaded {len(financial_data)} schools from Financial data")
+        
+        # Step 3: Merge on URN
+        # Use GIAS as the base (it has better contact info)
+        # Add financial data where available
+        
+        all_urns = set(gias_data.keys()) | set(financial_data.keys())
+        logger.info(f"🔗 Merging {len(all_urns)} unique schools")
+        
+        for urn in all_urns:
+            gias = gias_data.get(urn, {})
+            fin = financial_data.get(urn, {})
             
-            for row in reader:
-                try:
-                    school = self._row_to_school(row)
-                    if school:
-                        schools.append(school)
-                except Exception as e:
-                    logger.warning(f"⚠️ Error parsing row: {e}")
-                    continue
+            # Merge the two dictionaries (GIAS takes priority for contact info)
+            merged = {**fin, **gias}  # gias overwrites fin where both exist
+            
+            # But keep financial data for spending fields
+            if fin:
+                merged['_financial'] = fin
+            
+            try:
+                school = self._merged_row_to_school(merged, urn)
+                if school:
+                    schools.append(school)
+            except Exception as e:
+                logger.warning(f"⚠️ Error creating school {urn}: {e}")
+                continue
         
         return schools
     
+    def _load_gias_csv(self) -> Dict[str, Dict]:
+        """Load GIAS CSV and return dict keyed by URN"""
+        gias_path = self._find_csv_file(CSV_FILE_PATH_GIAS)
+        
+        if not gias_path:
+            logger.warning(f"⚠️ GIAS CSV not found: {CSV_FILE_PATH_GIAS}")
+            return {}
+        
+        logger.info(f"📖 Reading GIAS from: {gias_path}")
+        
+        data = {}
+        with open(gias_path, 'r', encoding='utf-8-sig') as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                urn = self._clean_urn(row.get('urn') or row.get('URN'))
+                if urn:
+                    data[urn] = row
+        
+        return data
+    
+    def _load_financial_csv(self) -> Dict[str, Dict]:
+        """Load Financial CSV and return dict keyed by URN"""
+        fin_path = self._find_csv_file(CSV_FILE_PATH_FINANCIAL)
+        
+        if not fin_path:
+            logger.warning(f"⚠️ Financial CSV not found: {CSV_FILE_PATH_FINANCIAL}")
+            return {}
+        
+        logger.info(f"💰 Reading Financial data from: {fin_path}")
+        
+        data = {}
+        with open(fin_path, 'r', encoding='utf-8-sig') as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                # Skip failed rows
+                if row.get('status') and row.get('status') != 'success':
+                    continue
+                    
+                urn = self._clean_urn(row.get('URN') or row.get('urn'))
+                if urn:
+                    data[urn] = row
+        
+        return data
+    
+    def _clean_urn(self, urn) -> Optional[str]:
+        """Clean and standardize URN format"""
+        if urn is None or urn == '' or str(urn).lower() == 'nan':
+            return None
+        try:
+            return str(int(float(urn)))
+        except (ValueError, TypeError):
+            return str(urn).strip()
+    
     def _safe_float(self, value) -> Optional[float]:
         """Safely convert a value to float"""
-        if value is None or value == '' or value == 'nan' or str(value).lower() == 'nan':
+        if value is None or value == '' or str(value).lower() == 'nan':
             return None
         try:
             return float(value)
@@ -114,7 +196,7 @@ class DataLoader:
     
     def _safe_int(self, value) -> Optional[int]:
         """Safely convert a value to int"""
-        if value is None or value == '' or value == 'nan' or str(value).lower() == 'nan':
+        if value is None or value == '' or str(value).lower() == 'nan':
             return None
         try:
             return int(float(value))
@@ -126,123 +208,143 @@ class DataLoader:
         for key in keys:
             value = row.get(key)
             if value is not None and value != '' and str(value).lower() != 'nan':
-                return str(value)
+                return str(value).strip()
         return None
     
-    def _row_to_school(self, row: Dict[str, Any]) -> Optional[School]:
-        """
-        Convert a CSV row to a School object.
-        
-        UPDATED: Maps from the new government download format:
-        - URN, SchoolName, LAName, SchoolType, TotalPupils
-        - TeachingStaffCosts, SupplyTeachingStaffCosts, AgencySupplyTeachingStaffCosts
-        - EducationSupportStaffCosts, EducationalConsultancyCosts
-        """
-        # Skip rows without URN or marked as failed
-        status = row.get('status', 'success')
-        if status != 'success':
+    def _clean_phone(self, phone) -> Optional[str]:
+        """Clean phone number format"""
+        if phone is None:
             return None
+        phone = str(phone).strip()
         
-        # Get URN - try multiple column names
-        urn = self._get_value(row, 'URN', 'urn')
-        if not urn:
-            return None
+        # Remove .0 from float conversion
+        if phone.endswith('.0'):
+            phone = phone[:-2]
         
-        # Get school name (try multiple column names)
+        # Format UK phone numbers
+        if phone.startswith('20') and len(phone) == 10:
+            phone = f"020 {phone[2:6]} {phone[6:]}"
+        elif phone.startswith('2') and len(phone) == 10:
+            phone = f"020 {phone[1:5]} {phone[5:]}"
+        
+        return phone if phone else None
+    
+    def _merged_row_to_school(self, row: Dict[str, Any], urn: str) -> Optional[School]:
+        """
+        Convert a merged row (GIAS + Financial) to a School object.
+        """
+        # Get school name - prefer GIAS
         school_name = self._get_value(
             row, 
-            'SchoolName', 
-            'school_name', 
+            'school_name',      # GIAS
+            'SchoolName',       # Financial
             'school_name_gias'
         ) or f"School {urn}"
         
-        # Get LA name (for boroughs)
+        # Get Local Authority name
         la_name = self._get_value(
             row, 
-            'LAName', 
-            'la_name', 
+            'la_name',          # GIAS
+            'LAName',           # Financial
             'la_name_gias'
         )
         
+        # Get school type and phase - prefer GIAS
+        school_type = self._get_value(row, 'school_type', 'SchoolType')
+        phase = self._get_value(row, 'phase', 'Phase')
+        
         # Get pupil count
         pupil_count = self._safe_int(
-            row.get('TotalPupils') or row.get('pupil_count')
+            row.get('pupil_count') or row.get('TotalPupils')
         )
         
-        # Get school type
-        school_type = self._get_value(row, 'SchoolType', 'school_type')
+        # Get contact details from GIAS
+        phone = self._clean_phone(row.get('phone'))
+        website = self._get_value(row, 'website')
         
-        # Create financial data with TOTAL SPEND values
-        # Note: Column names from government download use different casing
-        financial = FinancialData(
-            total_expenditure=self._safe_float(
-                row.get('TotalExpenditure') or row.get('total_expenditure')
-            ),
-            total_pupils=self._safe_float(
-                row.get('TotalPupils') or row.get('total_pupils')
-            ),
-            total_teaching_support_costs=self._safe_float(
-                row.get('TotalTeachingSupportStaffCosts') or row.get('total_teaching_support_costs')
-            ),
-            teaching_staff_costs=self._safe_float(
-                row.get('TeachingStaffCosts') or row.get('teaching_staff_costs')
-            ),
-            supply_teaching_costs=self._safe_float(
-                row.get('SupplyTeachingStaffCosts') or row.get('supply_teaching_costs')
-            ),
-            agency_supply_costs=self._safe_float(
-                row.get('AgencySupplyTeachingStaffCosts') or row.get('agency_supply_costs')
-            ),
-            educational_support_costs=self._safe_float(
-                row.get('EducationSupportStaffCosts') or row.get('educational_support_costs')
-            ),
-            educational_consultancy_costs=self._safe_float(
-                row.get('EducationalConsultancyCosts') or row.get('educational_consultancy_costs')
-            ),
-        )
-        
-        # Create headteacher contact if we have GIAS data
+        # Build headteacher contact from GIAS data
         headteacher = None
-        head_name = self._get_value(row, 'headteacher', 'HeadTeacher')
-        if head_name:
+        head_title = self._get_value(row, 'head_title')
+        head_first = self._get_value(row, 'head_first_name')
+        head_last = self._get_value(row, 'head_last_name')
+        head_full = self._get_value(row, 'headteacher')
+        
+        if head_full or (head_first and head_last):
+            full_name = head_full or f"{head_title or ''} {head_first or ''} {head_last or ''}".strip()
             headteacher = Contact(
-                full_name=str(head_name),
+                full_name=full_name,
                 role=ContactRole.HEADTEACHER,
-                title=row.get('head_title'),
-                first_name=row.get('head_first_name'),
-                last_name=row.get('head_last_name'),
-                phone=row.get('phone'),
+                title=head_title,
+                first_name=head_first,
+                last_name=head_last,
+                phone=phone,
                 confidence_score=1.0
             )
         
-        # Clean URN format
-        try:
-            clean_urn = str(int(float(urn)))
-        except (ValueError, TypeError):
-            clean_urn = str(urn)
+        # Build financial data from Financial CSV
+        fin = row.get('_financial', row)  # Use _financial if available, else row
+        
+        financial = FinancialData(
+            total_expenditure=self._safe_float(
+                fin.get('TotalExpenditure') or fin.get('total_expenditure')
+            ),
+            total_pupils=self._safe_float(
+                fin.get('TotalPupils') or row.get('pupil_count')
+            ),
+            total_teaching_support_costs=self._safe_float(
+                fin.get('TotalTeachingSupportStaffCosts') or fin.get('total_teaching_support_costs')
+            ),
+            teaching_staff_costs=self._safe_float(
+                fin.get('TeachingStaffCosts') or fin.get('teaching_staff_costs')
+            ),
+            supply_teaching_costs=self._safe_float(
+                fin.get('SupplyTeachingStaffCosts') or fin.get('supply_teaching_costs')
+            ),
+            agency_supply_costs=self._safe_float(
+                fin.get('AgencySupplyTeachingStaffCosts') or fin.get('agency_supply_costs')
+            ),
+            educational_support_costs=self._safe_float(
+                fin.get('EducationSupportStaffCosts') or fin.get('educational_support_costs')
+            ),
+            educational_consultancy_costs=self._safe_float(
+                fin.get('EducationalConsultancyCosts') or fin.get('educational_consultancy_costs')
+            ),
+        )
+        
+        # Get address from GIAS
+        address_1 = self._get_value(row, 'address_1')
+        address_2 = self._get_value(row, 'address_2')
+        address_3 = self._get_value(row, 'address_3')
+        town = self._get_value(row, 'town')
+        county = self._get_value(row, 'county')
+        postcode = self._get_value(row, 'postcode')
+        
+        # Get trust info
+        trust_code = self._get_value(row, 'trust_code')
+        trust_name = self._get_value(row, 'trust_name')
         
         # Create school object
         school = School(
-            urn=clean_urn,
+            urn=urn,
             school_name=school_name,
             la_name=la_name,
             school_type=school_type,
-            phase=row.get('phase'),
-            address_1=row.get('address_1'),
-            address_2=row.get('address_2'),
-            address_3=row.get('address_3'),
-            town=row.get('town'),
-            county=row.get('county'),
-            postcode=row.get('postcode'),
-            phone=row.get('phone'),
-            website=row.get('website'),
-            trust_code=row.get('trust_code'),
-            trust_name=row.get('trust_name'),
+            phase=phase,
+            address_1=address_1,
+            address_2=address_2,
+            address_3=address_3,
+            town=town,
+            county=county,
+            postcode=postcode,
+            phone=phone,
+            website=website,
+            trust_code=trust_code,
+            trust_name=trust_name,
             pupil_count=pupil_count,
             headteacher=headteacher,
             contacts=[headteacher] if headteacher else [],
             financial=financial,
-            data_source="csv"
+            data_source="csv_merged"
         )
         
         return school
@@ -250,11 +352,12 @@ class DataLoader:
     def _load_from_databricks(self) -> List[School]:
         """Databricks connection - placeholder for future"""
         logger.warning("⚠️ Databricks connection not yet implemented")
-        return self._load_from_csv()
+        return self._load_and_merge_csvs()
     
     
+    # =========================================================================
     # PUBLIC METHODS
-    
+    # =========================================================================
     
     def get_all_schools(self) -> List[School]:
         """Get all schools from the data source."""
@@ -273,7 +376,9 @@ class DataLoader:
     def get_school_by_urn(self, urn: str) -> Optional[School]:
         """Get a school by its URN."""
         self.load()
-        return self._schools_by_urn.get(urn)
+        # Try both with and without leading zeros
+        clean_urn = self._clean_urn(urn)
+        return self._schools_by_urn.get(clean_urn)
     
     def search_schools(self, query: str) -> List[School]:
         """Search schools by name."""
@@ -291,6 +396,20 @@ class DataLoader:
         schools = self.load()
         return [s for s in schools if s.la_name and s.la_name.lower() == borough.lower()]
     
+    def get_schools_with_staffing_spend(self, min_spend: float = 0) -> List[School]:
+        """
+        Get schools that have staffing spend data.
+        
+        Args:
+            min_spend: Minimum total staffing spend to filter by
+        """
+        schools = self.load()
+        return [
+            s for s in schools 
+            if s.financial and s.financial.total_teaching_support_costs 
+            and s.financial.total_teaching_support_costs > min_spend
+        ]
+    
     def get_schools_with_agency_spend(self, min_spend: float = 0) -> List[School]:
         """
         Get schools that spend on agency staff.
@@ -301,20 +420,41 @@ class DataLoader:
         schools = self.load()
         return [
             s for s in schools 
-            if s.financial and s.financial.agency_supply_costs and s.financial.agency_supply_costs > min_spend
+            if s.financial and s.financial.agency_supply_costs 
+            and s.financial.agency_supply_costs > min_spend
         ]
     
+    def get_top_spenders(self, limit: int = 20, spend_type: str = "total") -> List[School]:
+        """
+        Get schools with highest spending.
+        
+        Args:
+            limit: Number of schools to return
+            spend_type: "total" for total staffing, "agency" for agency only
+        """
+        schools = self.load()
+        
+        if spend_type == "agency":
+            schools_with_spend = [s for s in schools if s.financial and s.financial.agency_supply_costs]
+            return sorted(
+                schools_with_spend,
+                key=lambda s: s.financial.agency_supply_costs or 0,
+                reverse=True
+            )[:limit]
+        else:
+            schools_with_spend = [s for s in schools if s.financial and s.financial.total_teaching_support_costs]
+            return sorted(
+                schools_with_spend,
+                key=lambda s: s.financial.total_teaching_support_costs or 0,
+                reverse=True
+            )[:limit]
+    
     def get_top_agency_spenders(self, limit: int = 20) -> List[School]:
-        """Get schools with highest agency spend."""
-        schools = self.get_schools_with_agency_spend()
-        return sorted(
-            schools,
-            key=lambda s: s.financial.agency_supply_costs or 0,
-            reverse=True
-        )[:limit]
+        """Get schools with highest agency spend (backwards compatibility)."""
+        return self.get_top_spenders(limit=limit, spend_type="agency")
     
     def get_boroughs(self) -> List[str]:
-        """Get list of all boroughs/LAs in the data."""
+        """Get list of all boroughs/Local Authorities in the data."""
         schools = self.load()
         boroughs = set(s.la_name for s in schools if s.la_name)
         return sorted(list(boroughs))
@@ -322,6 +462,13 @@ class DataLoader:
     def get_statistics(self) -> Dict[str, Any]:
         """Get summary statistics about the loaded data."""
         schools = self.load()
+        
+        # Calculate total staffing spend
+        total_staffing_spend = sum(
+            s.financial.total_teaching_support_costs or 0 
+            for s in schools 
+            if s.financial
+        )
         
         # Calculate total agency spend
         total_agency_spend = sum(
@@ -335,9 +482,18 @@ class DataLoader:
         medium = len([s for s in schools if s.get_sales_priority() == "MEDIUM"])
         low = len([s for s in schools if s.get_sales_priority() == "LOW"])
         
+        # Count with contact details
+        with_contacts = len([s for s in schools if s.headteacher])
+        with_phone = len([s for s in schools if s.phone])
+        with_financial = len([s for s in schools if s.financial and s.financial.total_teaching_support_costs])
+        
         return {
             "total_schools": len(schools),
+            "with_contacts": with_contacts,
+            "with_phone": with_phone,
+            "with_financial_data": with_financial,
             "with_agency_spend": len(self.get_schools_with_agency_spend()),
+            "total_staffing_spend": f"£{total_staffing_spend:,.0f}",
             "total_agency_spend": f"£{total_agency_spend:,.0f}",
             "high_priority": high,
             "medium_priority": medium,
@@ -381,15 +537,17 @@ if __name__ == "__main__":
     for k, v in stats.items():
         print(f"   {k}: {v}")
     
-    # Get top agency spenders
-    top_spenders = loader.get_top_agency_spenders(limit=5)
-    print(f"\n🔥 Top 5 Agency Spenders:")
+    # Get top staffing spenders
+    top_spenders = loader.get_top_spenders(limit=5, spend_type="total")
+    print(f"\n💰 Top 5 Total Staffing Spenders:")
     for school in top_spenders:
-        spend = school.financial.agency_supply_costs
+        spend = school.financial.total_teaching_support_costs or 0
         print(f"   • {school.school_name}: £{spend:,.0f}")
+        if school.headteacher:
+            print(f"     Contact: {school.headteacher.full_name}")
     
-    # Get boroughs
+    # Get boroughs (Local Authorities)
     boroughs = loader.get_boroughs()
-    print(f"\n🏛️ Boroughs ({len(boroughs)}):")
+    print(f"\n🏛️ Local Authorities ({len(boroughs)}):")
     for b in boroughs[:10]:
         print(f"   • {b}")
