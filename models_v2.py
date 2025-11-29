@@ -1,6 +1,5 @@
 """
 School Research Assistant - Pydantic Models (v2)
-Replaces: models.py (dataclasses)
 """
 
 from pydantic import BaseModel, Field, field_validator
@@ -22,17 +21,6 @@ class ContactRole(str, Enum):
 class Contact(BaseModel):
     """
     A school contact (headteacher, deputy, etc.)
-    
-    Example:
-        Contact(
-            full_name="Ms Perina Holness",
-            role=ContactRole.HEADTEACHER,
-            title="Ms",
-            first_name="Perina",
-            last_name="Holness",
-            email="pholness@school.sch.uk",
-            phone="020 7520 0385"
-        )
     """
     full_name: str = Field(description="Full name of the contact")
     role: ContactRole = Field(default=ContactRole.UNKNOWN, description="Their role at the school")
@@ -62,44 +50,108 @@ class FinancialData(BaseModel):
     """
     School financial data from government sources
     
-    All values are stored as strings (e.g., "£4,100 per pupil") 
-    for easy display and LLM processing.
+    UPDATED: Now stores TOTAL SPEND values (numbers) not per-pupil strings.
+    We calculate per-pupil when needed using pupil_count.
     """
-    total_teaching_support_spend_per_pupil: Optional[str] = Field(
-        default=None, 
-        description="Total spend on teaching and support staff per pupil"
-    )
-    comparison_to_other_schools: Optional[str] = Field(
-        default=None,
-        description="How this school compares to similar schools"
-    )
-    total_teaching_support_per_pupil: Optional[str] = Field(default=None)
-    teaching_staff_costs: Optional[str] = Field(default=None)
-    supply_teaching_costs: Optional[str] = Field(default=None)
-    agency_supply_costs: Optional[str] = Field(
-        default=None,
-        description="CRITICAL: Agency supply costs - key sales metric"
-    )
-    educational_support_costs: Optional[str] = Field(default=None)
-    educational_consultancy_costs: Optional[str] = Field(default=None)
+    # Total values (from new CSV)
+    total_expenditure: Optional[float] = Field(default=None, description="Total school expenditure")
+    total_pupils: Optional[float] = Field(default=None, description="Total number of pupils")
+    
+    # Teaching staff costs (E01-E27)
+    teaching_staff_costs: Optional[float] = Field(default=None, description="E01: Teaching staff costs (total £)")
+    supply_teaching_costs: Optional[float] = Field(default=None, description="E02: Supply teaching staff costs (total £)")
+    educational_support_costs: Optional[float] = Field(default=None, description="E03: Educational support staff costs (total £)")
+    agency_supply_costs: Optional[float] = Field(default=None, description="E26: Agency supply teaching staff costs (total £) - KEY METRIC!")
+    educational_consultancy_costs: Optional[float] = Field(default=None, description="E27: Educational consultancy costs (total £)")
+    
+    # Total teaching and support
+    total_teaching_support_costs: Optional[float] = Field(default=None, description="Total teaching and support staff costs")
+    
+    # Legacy per-pupil fields (for backwards compatibility)
+    total_teaching_support_spend_per_pupil: Optional[str] = Field(default=None)
+    comparison_to_other_schools: Optional[str] = Field(default=None)
     
     def has_agency_spend(self) -> bool:
         """Check if school spends on agency staff (sales opportunity)"""
-        if not self.agency_supply_costs:
+        if self.agency_supply_costs is None:
             return False
-        # Check if it's not "£0 per pupil"
-        return "£0" not in self.agency_supply_costs
+        return self.agency_supply_costs > 0
+    
+    def get_agency_spend_formatted(self) -> str:
+        """Get agency spend as formatted string"""
+        if self.agency_supply_costs is None or self.agency_supply_costs == 0:
+            return "£0"
+        return f"£{self.agency_supply_costs:,.0f}"
+    
+    def get_agency_per_pupil(self) -> Optional[float]:
+        """Calculate agency spend per pupil"""
+        if self.agency_supply_costs and self.total_pupils and self.total_pupils > 0:
+            return self.agency_supply_costs / self.total_pupils
+        return None
+    
+    def get_agency_per_pupil_formatted(self) -> str:
+        """Get agency spend per pupil as formatted string"""
+        per_pupil = self.get_agency_per_pupil()
+        if per_pupil is None or per_pupil == 0:
+            return "£0 per pupil"
+        return f"£{per_pupil:,.0f} per pupil"
+    
+    def get_teaching_per_pupil(self) -> Optional[float]:
+        """Calculate teaching staff costs per pupil"""
+        if self.teaching_staff_costs and self.total_pupils and self.total_pupils > 0:
+            return self.teaching_staff_costs / self.total_pupils
+        return None
     
     def get_priority_level(self) -> str:
-        """Extract priority level from spend data"""
-        if self.total_teaching_support_spend_per_pupil:
-            if "High priority" in self.total_teaching_support_spend_per_pupil:
-                return "HIGH"
-            elif "Medium priority" in self.total_teaching_support_spend_per_pupil:
-                return "MEDIUM"
-            elif "Low priority" in self.total_teaching_support_spend_per_pupil:
-                return "LOW"
-        return "UNKNOWN"
+        """
+        Determine priority based on agency spend.
+        
+        HIGH: £50k+ on agency staff (big spender, strong opportunity)
+        MEDIUM: £10k-50k on agency staff
+        LOW: <£10k or no agency spend
+        """
+        if self.agency_supply_costs is None:
+            return "UNKNOWN"
+        
+        if self.agency_supply_costs >= 50000:
+            return "HIGH"
+        elif self.agency_supply_costs >= 10000:
+            return "MEDIUM"
+        else:
+            return "LOW"
+    
+    def get_financial_summary(self) -> str:
+        """Get a text summary for LLM context"""
+        lines = []
+        
+        if self.total_pupils:
+            lines.append(f"Total Pupils: {int(self.total_pupils)}")
+        
+        if self.total_expenditure:
+            lines.append(f"Total Expenditure: £{self.total_expenditure:,.0f}")
+        
+        if self.teaching_staff_costs:
+            lines.append(f"Teaching Staff Costs (E01): £{self.teaching_staff_costs:,.0f}")
+            if self.total_pupils and self.total_pupils > 0:
+                per_pupil = self.teaching_staff_costs / self.total_pupils
+                lines.append(f"  → £{per_pupil:,.0f} per pupil")
+        
+        if self.supply_teaching_costs and self.supply_teaching_costs > 0:
+            lines.append(f"Supply Teaching Costs (E02): £{self.supply_teaching_costs:,.0f}")
+        
+        if self.agency_supply_costs and self.agency_supply_costs > 0:
+            lines.append(f"Agency Supply Costs (E26): £{self.agency_supply_costs:,.0f} ⚠️ KEY METRIC")
+            if self.total_pupils and self.total_pupils > 0:
+                per_pupil = self.agency_supply_costs / self.total_pupils
+                lines.append(f"  → £{per_pupil:,.0f} per pupil on agency staff")
+        
+        if self.educational_support_costs:
+            lines.append(f"Educational Support Costs (E03): £{self.educational_support_costs:,.0f}")
+        
+        if self.educational_consultancy_costs and self.educational_consultancy_costs > 0:
+            lines.append(f"Educational Consultancy (E27): £{self.educational_consultancy_costs:,.0f}")
+        
+        return "\n".join(lines) if lines else "No financial data available"
 
 
 class OfstedData(BaseModel):
@@ -114,8 +166,6 @@ class OfstedData(BaseModel):
 class ConversationStarter(BaseModel):
     """
     A talking point for sales consultants
-    
-    Generated by the LLM based on school data.
     """
     topic: str = Field(description="Brief topic heading")
     detail: str = Field(description="The actual conversation starter script")
@@ -126,7 +176,7 @@ class ConversationStarter(BaseModel):
         json_schema_extra = {
             "example": {
                 "topic": "High Agency Spend",
-                "detail": "I noticed from government data that you're spending £604 per pupil on agency supply staff, which is higher than 66% of similar schools. We've helped schools like yours reduce these costs by 20% while improving teacher quality. Would you be open to a brief conversation about how?",
+                "detail": "I noticed from government data that you're spending £102,000 on agency supply staff this year. We've helped schools reduce these costs by 20% while improving teacher quality. Would you be open to a brief conversation about how?",
                 "source": "Financial Benchmarking Data",
                 "relevance_score": 0.95
             }
@@ -136,9 +186,6 @@ class ConversationStarter(BaseModel):
 class School(BaseModel):
     """
     Complete school record
-    
-    This is the main data structure. One School object contains
-    everything we know about a school.
     """
     # Identifiers
     urn: str = Field(description="Unique Reference Number - the school's ID")
@@ -226,13 +273,13 @@ class School(BaseModel):
     def to_llm_context(self) -> str:
         """
         Convert school data to text format for LLM analysis.
-        This is what gets sent to Claude/GPT to generate conversation starters.
+        UPDATED: Now uses total spend values with per-pupil calculations.
         """
         lines = [
             f"SCHOOL: {self.school_name}",
             f"URN: {self.urn}",
             f"Type: {self.school_type or 'Unknown'} ({self.phase or 'Unknown phase'})",
-            f"Location: {self.get_full_address()}",
+            f"Location: {self.la_name or 'Unknown LA'}",
             f"Pupil Count: {self.pupil_count or 'Unknown'}",
         ]
         
@@ -242,21 +289,23 @@ class School(BaseModel):
             if self.headteacher.phone:
                 lines.append(f"Phone: {self.headteacher.phone}")
         
-        # Add financial data
+        # Add financial data (NEW FORMAT)
         if self.financial:
-            lines.append("\nFINANCIAL DATA:")
-            if self.financial.total_teaching_support_spend_per_pupil:
-                lines.append(f"Total Teaching & Support Spend: {self.financial.total_teaching_support_spend_per_pupil}")
-            if self.financial.comparison_to_other_schools:
-                lines.append(f"Comparison: {self.financial.comparison_to_other_schools}")
-            if self.financial.agency_supply_costs:
-                lines.append(f"Agency Supply Costs: {self.financial.agency_supply_costs}")
-            if self.financial.educational_consultancy_costs:
-                lines.append(f"Consultancy Costs: {self.financial.educational_consultancy_costs}")
+            lines.append("\nFINANCIAL DATA (from Government Benchmarking Tool):")
+            lines.append(self.financial.get_financial_summary())
+            
+            # Add priority indicator
+            priority = self.financial.get_priority_level()
+            if priority == "HIGH":
+                lines.append("\n⚠️ SALES PRIORITY: HIGH - Significant agency spend!")
+            elif priority == "MEDIUM":
+                lines.append("\n📊 SALES PRIORITY: MEDIUM - Moderate agency spend")
         
         # Add Ofsted data
         if self.ofsted:
             lines.append(f"\nOFSTED RATING: {self.ofsted.rating or 'Unknown'}")
+            if self.ofsted.inspection_date:
+                lines.append(f"Inspection Date: {self.ofsted.inspection_date}")
             if self.ofsted.areas_for_improvement:
                 lines.append("Areas for improvement:")
                 for area in self.ofsted.areas_for_improvement:
@@ -275,8 +324,6 @@ class SchoolSearchResult(BaseModel):
 class ConversationStarterResponse(BaseModel):
     """
     Response from the LLM when generating conversation starters.
-    
-     used by LangChain to parse the LLM output into structured data.
     """
     conversation_starters: List[ConversationStarter] = Field(
         description="List of conversation starters for sales consultants"
@@ -289,3 +336,10 @@ class ConversationStarterResponse(BaseModel):
         default="MEDIUM",
         description="HIGH, MEDIUM, or LOW priority for sales outreach"
     )
+
+
+
+
+
+
+
