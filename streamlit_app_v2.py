@@ -205,7 +205,8 @@ def main():
         
         # Borough filter
         st.subheader("🏛️ Filter by Borough")
-        boroughs = service.data_loader.get_boroughs()
+        from data_loader import get_data_loader
+        boroughs = get_data_loader().get_boroughs()
         selected_borough = st.selectbox(
             "Select Borough",
             options=["All Boroughs"] + boroughs,
@@ -229,7 +230,7 @@ def main():
     # Filter by borough if selected
     if selected_borough and selected_borough != "All Boroughs":
         filtered_names = [
-            s.school_name for s in service.data_loader.get_schools_by_borough(selected_borough)
+            s.school_name for s in get_data_loader().get_schools_by_borough(selected_borough)
         ]
         display_names = sorted(filtered_names)
         st.info(f"Showing {len(display_names)} schools in {selected_borough}")
@@ -255,7 +256,7 @@ def main():
         # Show top agency spenders
         st.subheader("🔥 Top Agency Spenders (Best Sales Opportunities)")
         
-        top_spenders = service.data_loader.get_top_agency_spenders(limit=10)
+        top_spenders = get_data_loader().get_top_agency_spenders(limit=10)
         
         if top_spenders:
             for school in top_spenders:
