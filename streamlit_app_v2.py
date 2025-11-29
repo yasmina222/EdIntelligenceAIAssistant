@@ -18,6 +18,7 @@ if str(PROJECT_ROOT) not in sys.path:
 
 # Import our modules
 from school_intelligence_service import get_intelligence_service
+from data_loader import get_data_loader  # FIX: Added missing import
 from models_v2 import School, ConversationStarter
 from config_v2 import get_app_password, LLM_PROVIDER, FEATURES
 
@@ -203,10 +204,10 @@ def main():
         
         st.divider()
         
-        # Borough filter
+        # Borough filter - FIX: Now using the properly imported get_data_loader
         st.subheader("🏛️ Filter by Borough")
-        from data_loader import get_data_loader
-        boroughs = get_data_loader().get_boroughs()
+        data_loader = get_data_loader()
+        boroughs = data_loader.get_boroughs()
         selected_borough = st.selectbox(
             "Select Borough",
             options=["All Boroughs"] + boroughs,
@@ -227,10 +228,11 @@ def main():
     # Main content
     st.header("🔍 Search Schools")
     
-    # Filter by borough if selected
+    # Filter by borough if selected - FIX: Now using the properly imported get_data_loader
+    data_loader = get_data_loader()
     if selected_borough and selected_borough != "All Boroughs":
         filtered_names = [
-            s.school_name for s in get_data_loader().get_schools_by_borough(selected_borough)
+            s.school_name for s in data_loader.get_schools_by_borough(selected_borough)
         ]
         display_names = sorted(filtered_names)
         st.info(f"Showing {len(display_names)} schools in {selected_borough}")
@@ -253,10 +255,10 @@ def main():
         else:
             st.error(f"School not found: {selected_school_name}")
     else:
-        # Show top agency spenders
+        # Show top agency spenders - FIX: Now using the properly imported get_data_loader
         st.subheader("🔥 Top Agency Spenders (Best Sales Opportunities)")
         
-        top_spenders = get_data_loader().get_top_agency_spenders(limit=10)
+        top_spenders = data_loader.get_top_agency_spenders(limit=10)
         
         if top_spenders:
             for school in top_spenders:
