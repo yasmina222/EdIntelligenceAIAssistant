@@ -17,6 +17,9 @@ from pathlib import Path
 from datetime import datetime, timedelta
 from typing import Optional, List, Dict, Any
 
+# Set up logging FIRST - before any imports that might use it
+logger = logging.getLogger(__name__)
+
 # Add the project root to Python path (fixes Streamlit Cloud imports)
 PROJECT_ROOT = Path(__file__).parent
 if str(PROJECT_ROOT) not in sys.path:
@@ -34,8 +37,6 @@ try:
 except ImportError as e:
     OFSTED_AVAILABLE = False
     logger.warning(f"Ofsted chain not available: {e}")
-
-logger = logging.getLogger(__name__)
 
 
 class SimpleCache:
