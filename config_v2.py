@@ -1,7 +1,7 @@
 """
 School Research Assistant - Configuration (v2)
 ==============================================
-UPDATED: Now points to london_schools_financial_CLEAN.csv
+UPDATED: Now supports TWO data sources - Financial + GIAS contacts
 
 """
 
@@ -87,9 +87,15 @@ def get_api_keys() -> dict:
 # Options: "csv", "databricks"
 DATA_SOURCE: Literal["csv", "databricks"] = "csv"
 
-# UPDATED: Path to the new financial data CSV
-# This file contains ALL London schools with total spend values
-CSV_FILE_PATH = "data/london_schools_financial_CLEAN.csv"
+# CSV FILE PATHS
+# Financial data - from government benchmarking tool (spending figures)
+CSV_FILE_PATH_FINANCIAL = "data/london_schools_financial_CLEAN.csv"
+
+# GIAS data - school contact details (headteacher, phone, address, etc.)
+CSV_FILE_PATH_GIAS = "data/london_schools_gias.csv"
+
+# Legacy path (for backwards compatibility)
+CSV_FILE_PATH = CSV_FILE_PATH_FINANCIAL
 
 # Databricks configuration (for future)
 DATABRICKS_CONFIG = {
@@ -100,6 +106,52 @@ DATABRICKS_CONFIG = {
     "schema": "schools",
     "table": "edco_schools"
 }
+
+
+# =============================================================================
+# SALES PRIORITY CONFIGURATION
+# =============================================================================
+
+# Priority is now based on TOTAL STAFFING SPEND (not just agency)
+# Because Protocol offers permanent, temporary, AND agency staff
+
+PRIORITY_THRESHOLDS = {
+    "HIGH": 500000,      # £500k+ total staffing = big spender, big opportunity
+    "MEDIUM": 200000,    # £200k-500k = mid-size opportunity
+    "LOW": 0,            # Under £200k = smaller schools
+}
+
+# Which cost field to use for priority calculation
+# Options: "total_teaching_support_costs", "total_expenditure", "teaching_staff_costs"
+PRIORITY_COST_FIELD = "total_teaching_support_costs"
+
+
+# =============================================================================
+# DISPLAY LABELS (User-friendly names for data fields)
+# =============================================================================
+
+DISPLAY_LABELS = {
+    "la_name": "Local Authority",
+    "la_code": "LA Code",
+    "urn": "URN",
+    "school_name": "School Name",
+    "school_type": "School Type",
+    "phase": "Phase",
+    "pupil_count": "Number of Pupils",
+    "headteacher": "Headteacher",
+    "trust_name": "Trust Name",
+    "postcode": "Postcode",
+    "phone": "Phone Number",
+    "website": "Website",
+    "total_expenditure": "Total Expenditure",
+    "teaching_staff_costs": "Teaching Staff Costs",
+    "agency_supply_costs": "Agency Supply Costs",
+    "total_teaching_support_costs": "Total Staffing Costs",
+}
+
+def get_display_label(field_name: str) -> str:
+    """Get user-friendly display label for a field name"""
+    return DISPLAY_LABELS.get(field_name, field_name.replace("_", " ").title())
 
 
 # =============================================================================
