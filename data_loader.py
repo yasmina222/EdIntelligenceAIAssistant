@@ -105,7 +105,7 @@ class DataLoader:
     
     def _safe_float(self, value) -> Optional[float]:
         """Safely convert a value to float"""
-        if value is None or value == '' or value == 'nan':
+        if value is None or value == '' or value == 'nan' or str(value).lower() == 'nan':
             return None
         try:
             return float(value)
@@ -114,12 +114,20 @@ class DataLoader:
     
     def _safe_int(self, value) -> Optional[int]:
         """Safely convert a value to int"""
-        if value is None or value == '' or value == 'nan':
+        if value is None or value == '' or value == 'nan' or str(value).lower() == 'nan':
             return None
         try:
             return int(float(value))
         except (ValueError, TypeError):
             return None
+    
+    def _get_value(self, row: Dict[str, Any], *keys) -> Optional[str]:
+        """Get value from row, trying multiple possible column names"""
+        for key in keys:
+            value = row.get(key)
+            if value is not None and value != '' and str(value).lower() != 'nan':
+                return str(value)
+        return None
     
     def _row_to_school(self, row: Dict[str, Any]) -> Optional[School]:
         """
@@ -135,23 +143,25 @@ class DataLoader:
         if status != 'success':
             return None
         
-        urn = row.get('URN') or row.get('urn')
+        # Get URN - try multiple column names
+        urn = self._get_value(row, 'URN', 'urn')
         if not urn:
             return None
         
         # Get school name (try multiple column names)
-        school_name = (
-            row.get('SchoolName') or 
-            row.get('school_name') or 
-            row.get('school_name_gias') or
-            f"School {urn}"
-        )
+        school_name = self._get_value(
+            row, 
+            'SchoolName', 
+            'school_name', 
+            'school_name_gias'
+        ) or f"School {urn}"
         
-        # Get LA name
-        la_name = (
-            row.get('LAName') or 
-            row.get('la_name') or 
-            row.get('la_name_gias')
+        # Get LA name (for boroughs)
+        la_name = self._get_value(
+            row, 
+            'LAName', 
+            'la_name', 
+            'la_name_gias'
         )
         
         # Get pupil count
@@ -159,22 +169,42 @@ class DataLoader:
             row.get('TotalPupils') or row.get('pupil_count')
         )
         
+        # Get school type
+        school_type = self._get_value(row, 'SchoolType', 'school_type')
+        
         # Create financial data with TOTAL SPEND values
+        # Note: Column names from government download use different casing
         financial = FinancialData(
-            total_expenditure=self._safe_float(row.get('TotalExpenditure')),
-            total_pupils=self._safe_float(row.get('TotalPupils')),
-            total_teaching_support_costs=self._safe_float(row.get('TotalTeachingSupportStaffCosts')),
-            teaching_staff_costs=self._safe_float(row.get('TeachingStaffCosts')),
-            supply_teaching_costs=self._safe_float(row.get('SupplyTeachingStaffCosts')),
-            agency_supply_costs=self._safe_float(row.get('AgencySupplyTeachingStaffCosts')),
-            educational_support_costs=self._safe_float(row.get('EducationSupportStaffCosts')),
-            educational_consultancy_costs=self._safe_float(row.get('EducationalConsultancyCosts')),
+            total_expenditure=self._safe_float(
+                row.get('TotalExpenditure') or row.get('total_expenditure')
+            ),
+            total_pupils=self._safe_float(
+                row.get('TotalPupils') or row.get('total_pupils')
+            ),
+            total_teaching_support_costs=self._safe_float(
+                row.get('TotalTeachingSupportStaffCosts') or row.get('total_teaching_support_costs')
+            ),
+            teaching_staff_costs=self._safe_float(
+                row.get('TeachingStaffCosts') or row.get('teaching_staff_costs')
+            ),
+            supply_teaching_costs=self._safe_float(
+                row.get('SupplyTeachingStaffCosts') or row.get('supply_teaching_costs')
+            ),
+            agency_supply_costs=self._safe_float(
+                row.get('AgencySupplyTeachingStaffCosts') or row.get('agency_supply_costs')
+            ),
+            educational_support_costs=self._safe_float(
+                row.get('EducationSupportStaffCosts') or row.get('educational_support_costs')
+            ),
+            educational_consultancy_costs=self._safe_float(
+                row.get('EducationalConsultancyCosts') or row.get('educational_consultancy_costs')
+            ),
         )
         
         # Create headteacher contact if we have GIAS data
         headteacher = None
-        head_name = row.get('headteacher') or row.get('HeadTeacher')
-        if head_name and head_name != '' and head_name != 'nan':
+        head_name = self._get_value(row, 'headteacher', 'HeadTeacher')
+        if head_name:
             headteacher = Contact(
                 full_name=str(head_name),
                 role=ContactRole.HEADTEACHER,
@@ -185,12 +215,18 @@ class DataLoader:
                 confidence_score=1.0
             )
         
+        # Clean URN format
+        try:
+            clean_urn = str(int(float(urn)))
+        except (ValueError, TypeError):
+            clean_urn = str(urn)
+        
         # Create school object
         school = School(
-            urn=str(int(float(urn))),  # Clean URN format
+            urn=clean_urn,
             school_name=school_name,
             la_name=la_name,
-            school_type=row.get('SchoolType') or row.get('school_type'),
+            school_type=school_type,
             phase=row.get('phase'),
             address_1=row.get('address_1'),
             address_2=row.get('address_2'),
